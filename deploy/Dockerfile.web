@@ -6,7 +6,9 @@ WORKDIR /web
 COPY --from=frontend package.json package-lock.json ./
 RUN npm ci
 COPY --from=frontend . .
-RUN npx ng build --configuration production
+# Commit do git (o contexto não tem .git): gravado em src/app/core/versao/versao.ts, exibido no rodapé.
+ARG VERSAO_COMMIT=
+RUN node scripts/gravar-versao.mjs "${VERSAO_COMMIT}" && npx ng build --configuration production
 
 FROM caddy:2-alpine
 COPY deploy/Caddyfile /etc/caddy/Caddyfile

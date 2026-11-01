@@ -1,5 +1,6 @@
 # Homologação do IMPA: Caddy (HTTPS + SPA) → API → PostgreSQL.
-# Uso: docker compose -f deploy/docker-compose.homolog.yml --env-file deploy/.env up -d --build
+# Uso: deploy/subir.sh deploy/.env  (preenche os commits exibidos no rodapé e roda o compose)
+# ou:  docker compose -f deploy/docker-compose.homolog.yml --env-file deploy/.env up -d --build
 # O impa-frontend precisa estar clonado ao lado do impa-backend (ou em CAMINHO_FRONTEND).
 name: impa-homolog
 
@@ -23,6 +24,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+      args:
+        VERSAO_COMMIT: ${VERSAO_COMMIT_API:-}
     environment:
       # Gss Encryption Mode=Disable: sem Kerberos; evita a busca por libgssapi_krb5 (ausente na imagem).
       ConnectionStrings__Impa: Host=postgres;Port=5432;Database=impa;Username=impa;Password=${POSTGRES_PASSWORD};Gss Encryption Mode=Disable
@@ -52,6 +55,8 @@ services:
       dockerfile: deploy/Dockerfile.web
       additional_contexts:
         frontend: ${CAMINHO_FRONTEND:-../../impa-frontend}
+      args:
+        VERSAO_COMMIT: ${VERSAO_COMMIT_WEB:-}
     environment:
       DOMINIO: ${DOMINIO:?defina DOMINIO no .env}
     ports:

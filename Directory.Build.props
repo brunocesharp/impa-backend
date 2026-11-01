@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Versão do IMPA API, exibida no rodapé do sistema com o commit curto (GET /api/versao).
+         Suba a cada entrega relevante: MAJOR.MINOR.PATCH. -->
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>
