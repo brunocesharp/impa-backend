@@ -66,6 +66,7 @@ app.UseAuthorization();
 app.MapHealthChecks("/api/health").AllowAnonymous();
 app.MapAutenticacaoEndpoints();
 app.MapConfiguracaoEndpoints();
+app.MapVersaoEndpoints();
 
 app.Run();
 

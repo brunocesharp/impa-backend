@@ -41,8 +41,12 @@ cp deploy/.env.example deploy/.env
 nano deploy/.env        # DOMINIO, POSTGRES_PASSWORD, IMPA_ADMIN_*, MEDIATR_LICENSE_KEY
 chmod 600 deploy/.env
 
-docker compose -f deploy/docker-compose.homolog.yml --env-file deploy/.env up -d --build
+deploy/subir.sh deploy/.env
 ```
+
+O `subir.sh` lê o commit atual dos dois repositórios (`git rev-parse --short HEAD`) e os passa ao build: o rodapé do
+sistema mostra **Web {versão} ({commit})** e **API {versão} ({commit})**. Com o `docker compose` direto, sem
+`VERSAO_COMMIT_API`/`VERSAO_COMMIT_WEB`, o rodapé mostra `dev` no lugar do commit.
 
 Conferir:
 
@@ -59,13 +63,19 @@ O administrador só é criado se ainda não houver nenhum: mudar as variáveis d
 cd ~/impa/impa-backend && git pull
 cd ~/impa/impa-frontend && git pull
 cd ~/impa/impa-backend
-docker compose -f deploy/docker-compose.homolog.yml --env-file deploy/.env up -d --build
+deploy/subir.sh deploy/.env
 docker image prune -f
 ```
 
 As migrações do banco rodam sozinhas quando a API sobe. As sessões abertas continuam valendo (chaves no volume).
 O `web` (Caddy) só sobe depois que o `healthcheck` da `api` (`GET /api/health` por HTTP dentro do container) responde
 200, então não há 502 enquanto a API inicia; o `ps` mostra `(healthy)`.
+
+### Versão
+
+- **API:** `Version` em `Directory.Build.props` (impa-backend); **Web:** `version` em `package.json` (impa-frontend).
+  Suba a versão a cada entrega relevante; o commit muda sozinho a cada build.
+- Conferir o que está no ar: rodapé do sistema, ou `GET /api/versao` (com sessão).
 
 ## Logs e situação
 
@@ -81,7 +91,7 @@ Com `DOMINIO=localhost`, o Caddy usa um certificado interno (o navegador avisa; 
 Se 80/443 estiverem ocupadas, use `PORTA_HTTP=8080` e `PORTA_HTTPS=8443` e abra `https://localhost:8443`.
 
 ```bash
-docker compose -f deploy/docker-compose.homolog.yml --env-file deploy/.env.local up -d --build
+deploy/subir.sh deploy/.env.local
 ```
 
 Os testes ponta a ponta do impa-frontend (Playwright) rodam contra esse ambiente (ver o README do impa-frontend).
