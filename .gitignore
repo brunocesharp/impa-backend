@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# segredos do deploy (o modelo .env.example vai para o Git)
+.env.*
+!.env.example

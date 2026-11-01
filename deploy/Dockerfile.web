@@ -1,0 +1,13 @@
+# IMPA Web: build do Angular (impa-frontend) servido pelo Caddy, que também encaminha /api para a API.
+# Contextos: o principal é a raiz do impa-backend (para o Caddyfile); "frontend" é a raiz do impa-frontend
+# (additional_contexts no docker-compose.homolog.yml).
+FROM node:24-alpine AS build
+WORKDIR /web
+COPY --from=frontend package.json package-lock.json ./
+RUN npm ci
+COPY --from=frontend . .
+RUN npx ng build --configuration production
+
+FROM caddy:2-alpine
+COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /web/dist/impa-frontend/browser /srv

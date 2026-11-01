@@ -14,7 +14,9 @@ public sealed class HostDbContext(DbContextOptions<HostDbContext> options) : DbC
     {
         modelBuilder.HasDefaultSchema(Schema);
         // unaccent e pg_trgm: busca tolerante do catálogo (story 3.4).
-        modelBuilder.HasPostgresExtension("public", "unaccent");
-        modelBuilder.HasPostgresExtension("public", "pg_trgm");
+        // Sem schema explícito: o PostgreSQL cria em `public` (search_path). Com "public" explícito o
+        // snapshot do Npgsql omite o schema e o EF acusa PendingModelChangesWarning a cada inicialização.
+        modelBuilder.HasPostgresExtension("unaccent");
+        modelBuilder.HasPostgresExtension("pg_trgm");
     }
 }

@@ -1,0 +1,30 @@
+# IMPA: HTTPS automático (Let's Encrypt no domínio público; certificado interno para "localhost").
+{$DOMINIO} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# API: o Caddy acrescenta X-Forwarded-For/Proto, que o Host lê (ForwardedHeaders).
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# SPA: arquivos do build; rotas do Angular caem no index.html.
+	handle {
+		root * /srv
+
+		# index.html, manifest e service worker sempre revalidados: a versão nova chega na próxima abertura.
+		header Cache-Control "no-cache"
+		# Arquivos com hash no nome (main-U6UM6REX.js, chunk-D9YAThRx.js) nunca mudam.
+		@imutavel path_regexp \-[A-Za-z0-9_]{8}\.(js|css)$
+		header @imutavel Cache-Control "public, max-age=31536000, immutable"
+
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -11,8 +11,8 @@ namespace Impa.Host.Persistence.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterDatabase()
-                .Annotation("Npgsql:PostgresExtension:public.pg_trgm", ",,")
-                .Annotation("Npgsql:PostgresExtension:public.unaccent", ",,");
+                .Annotation("Npgsql:PostgresExtension:pg_trgm", ",,")
+                .Annotation("Npgsql:PostgresExtension:unaccent", ",,");
         }
 
         /// <inheritdoc />

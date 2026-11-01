@@ -11,7 +11,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Impa.Host.Persistence.Migrations
 {
     [DbContext(typeof(HostDbContext))]
-    [Migration("20261031171908_InicialExtensoes")]
+    [Migration("20261031211737_InicialExtensoes")]
     partial class InicialExtensoes
     {
         /// <inheritdoc />

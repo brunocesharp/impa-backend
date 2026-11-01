@@ -52,6 +52,9 @@ dotnet ef migrations add {Nome} -p src/Modules/Acesso/Impa.Modules.Acesso.Infras
 
 Pré-requisito: PostgreSQL acessível com a string `ConnectionStrings:Impa` (`appsettings.Development.json`).
 
+Na primeira subida, o seed cria os perfis **Administrador** e **Operador de caixa** e, se ainda não houver administrador,
+o primeiro a partir de `IMPA_ADMIN_USUARIO`, `IMPA_ADMIN_SENHA` (mínimo 8 caracteres) e `IMPA_ADMIN_NOME`.
+
 ```bash
 dotnet run --project src/Host/Impa.Host
 curl http://localhost:5224/api/health
