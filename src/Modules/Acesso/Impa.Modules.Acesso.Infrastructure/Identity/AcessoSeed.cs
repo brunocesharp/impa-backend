@@ -36,10 +36,23 @@ public static class AcessoSeed
             return;
         }
 
-        var usuario = new Usuario { UserName = administrador.Usuario, NomeExibicao = administrador.Nome };
-        Verificar(await usuarios.CreateAsync(usuario, administrador.Senha), "criar o primeiro administrador");
+        // O login já pode existir sem o perfil (falha entre as duas gravações abaixo, ou perfil retirado):
+        // só devolve o perfil, sem recriar nem trocar senha/nome — senão toda subida lançaria DuplicateUserName.
+        var usuario = await usuarios.FindByNameAsync(administrador.Usuario);
+        if (usuario is null)
+        {
+            usuario = new Usuario { UserName = administrador.Usuario, NomeExibicao = administrador.Nome };
+            Verificar(await usuarios.CreateAsync(usuario, administrador.Senha), "criar o primeiro administrador");
+            log.LogInformation("Primeiro administrador {Usuario} criado.", administrador.Usuario);
+        }
+        else
+        {
+            log.LogWarning(
+                "Nenhum usuário com o perfil Administrador; {Usuario} (IMPA_ADMIN_USUARIO) já existe e recebe o perfil.",
+                administrador.Usuario);
+        }
+
         Verificar(await usuarios.AddToRoleAsync(usuario, PerfisPadrao.Administrador.Nome), "dar o perfil Administrador");
-        log.LogInformation("Primeiro administrador {Usuario} criado.", administrador.Usuario);
     }
 
     private static async Task GarantirPerfilAsync(RoleManager<Perfil> perfis, PerfilPadrao padrao)

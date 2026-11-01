@@ -14,6 +14,25 @@ public class HealthTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFactory>
     }
 
     [Fact]
+    public async Task Health_responde_200_por_http_sem_tls()
+    {
+        // Healthcheck interno do compose (http://localhost:8080) e `dotnet run` no perfil http.
+        var resposta = await factory.CriarCliente(https: false).GetAsync("/api/health");
+
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_na_api_por_http_nao_emite_token_xsrf_nem_falha()
+    {
+        var resposta = await factory.CriarCliente(https: false).GetAsync("/api/auth/me");
+
+        // Sem HTTPS não há sessão possível (cookie Secure): 401, e não 500 do antiforgery.
+        Assert.Equal(HttpStatusCode.Unauthorized, resposta.StatusCode);
+        Assert.False(resposta.Headers.TryGetValues("Set-Cookie", out _));
+    }
+
+    [Fact]
     public async Task Migracao_do_host_cria_extensoes_unaccent_e_pg_trgm()
     {
         _ = factory.CriarCliente(); // sobe o Host, que aplica as migrações

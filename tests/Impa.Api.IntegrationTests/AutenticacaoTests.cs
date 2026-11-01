@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using Impa.Modules.Acesso.Application.Perfis;
+using Impa.Modules.Acesso.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity;
 using Npgsql;
 
 namespace Impa.Api.IntegrationTests;
@@ -66,6 +68,58 @@ public class AutenticacaoTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFa
     }
 
     [Fact]
+    public async Task Cenario_1_2_senha_errada_e_usuario_inexistente_recebem_respostas_identicas()
+    {
+        var senhaErrada = await (await ClienteApi.AbrirAsync(factory)).EntrarAsync("ana", "errada123");
+        var inexistente = await (await ClienteApi.AbrirAsync(factory)).EntrarAsync("nao-existe", "errada123");
+
+        Assert.Equal(senhaErrada.StatusCode, inexistente.StatusCode);
+        Assert.Equal(await senhaErrada.Content.ReadAsStringAsync(), await inexistente.Content.ReadAsStringAsync());
+        Assert.Equal(Cabecalhos(senhaErrada), Cabecalhos(inexistente));
+    }
+
+    [Fact]
+    public async Task Usuario_inexistente_gasta_uma_conferencia_de_senha_como_a_senha_errada()
+    {
+        factory.Hasher.Zerar();
+        await (await ClienteApi.AbrirAsync(factory)).EntrarAsync("ana", "errada123");
+        var conferenciasSenhaErrada = factory.Hasher.Conferencias;
+
+        factory.Hasher.Zerar();
+        await (await ClienteApi.AbrirAsync(factory)).EntrarAsync("nao-existe", "errada123");
+
+        Assert.Equal(1, conferenciasSenhaErrada);
+        Assert.Equal(conferenciasSenhaErrada, factory.Hasher.Conferencias);
+    }
+
+    [Fact]
+    public async Task Espaco_no_fim_do_usuario_e_ignorado()
+    {
+        var cliente = await ClienteApi.AbrirAsync(factory);
+
+        var login = await cliente.EntrarAsync("ana ", "balcao2026");
+
+        Assert.Equal(HttpStatusCode.NoContent, login.StatusCode);
+    }
+
+    [Fact]
+    public async Task Usuario_so_com_espacos_e_recusado_por_validacao()
+    {
+        var cliente = await ClienteApi.AbrirAsync(factory);
+
+        var login = await cliente.EntrarAsync("   ", "balcao2026");
+
+        Assert.Equal(HttpStatusCode.BadRequest, login.StatusCode);
+    }
+
+    // Cabeçalhos que poderiam diferenciar as respostas (Date muda a cada requisição).
+    private static string Cabecalhos(HttpResponseMessage resposta) => string.Join('\n',
+        resposta.Headers.Concat(resposta.Content.Headers)
+            .Where(h => h.Key != "Date")
+            .Select(h => $"{h.Key}: {(h.Key == "Set-Cookie" ? string.Join(",", h.Value.Select(v => v.Split('=')[0])) : string.Join(",", h.Value))}")
+            .Order());
+
+    [Fact]
     public async Task Login_sem_usuario_ou_senha_e_recusado_por_validacao()
     {
         var cliente = await ClienteApi.AbrirAsync(factory);
@@ -121,6 +175,15 @@ public class AutenticacaoTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFa
     }
 
     [Fact]
+    public async Task Login_por_http_sem_tls_e_recusado_sem_erro_500()
+    {
+        var resposta = await factory.CriarCliente(https: false).PostAsJsonAsync(
+            "/api/auth/login", new { usuario = "ana", senha = "balcao2026" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+    }
+
+    [Fact]
     public async Task Token_xsrf_e_renovado_no_login_e_o_novo_vale_para_o_logout()
     {
         var cliente = await ClienteApi.AbrirAsync(factory);
@@ -146,5 +209,14 @@ public class AutenticacaoTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFa
 
         Assert.False(string.IsNullOrEmpty(hash));
         Assert.DoesNotContain("balcao2026", hash);
+
+        // Formato V3 do Identity (marcador 0x01, PBKDF2 com sal), e não uma codificação reversível.
+        var bytes = Convert.FromBase64String(hash);
+        Assert.Equal(0x01, bytes[0]);
+        Assert.DoesNotContain("balcao2026", System.Text.Encoding.UTF8.GetString(bytes));
+
+        var hasher = new PasswordHasher<Usuario>();
+        Assert.Equal(PasswordVerificationResult.Success, hasher.VerifyHashedPassword(new Usuario(), hash, "balcao2026"));
+        Assert.Equal(PasswordVerificationResult.Failed, hasher.VerifyHashedPassword(new Usuario(), hash, "errada123"));
     }
 }

@@ -6,6 +6,9 @@
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		# Nenhuma página do IMPA pode ser carregada em iframe (clickjacking no login).
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
 		-Server
 	}
 
@@ -19,12 +22,27 @@
 		root * /srv
 
 		# index.html, manifest e service worker sempre revalidados: a versão nova chega na próxima abertura.
-		header Cache-Control "no-cache"
-		# Arquivos com hash no nome (main-U6UM6REX.js, chunk-D9YAThRx.js) nunca mudam.
-		@imutavel path_regexp \-[A-Za-z0-9_]{8}\.(js|css)$
+		# "?": só quando o @imutavel abaixo não definiu (sem ele, este header, sem matcher, roda depois e sobrescreve).
+		header ?Cache-Control "no-cache"
+		# Arquivos com hash no nome (main-U6UM6REX.js, chunk-rghDyt-0.js; o hash pode ter "-" e "_") nunca mudam
+		# — só quando existem.
+		@imutavel {
+			path_regexp \-[A-Za-z0-9_-]{8}\.(js|css)$
+			file
+		}
 		header @imutavel Cache-Control "public, max-age=31536000, immutable"
 
-		try_files {path} /index.html
+		route {
+			# Chunk de uma versão anterior (aba antiga): 404, e não o index.html, que o navegador
+			# recusaria como script e guardaria em cache como se fosse o chunk.
+			@ativoAusente {
+				path *.js *.mjs *.css
+				not file
+			}
+			respond @ativoAusente 404
+
+			try_files {path} /index.html
+		}
 		file_server
 	}
 }

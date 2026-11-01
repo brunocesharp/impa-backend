@@ -67,6 +67,36 @@ public class IdentidadeTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFact
     }
 
     [Fact]
+    public async Task Seed_com_login_do_administrador_ja_existente_sem_perfil_so_devolve_o_perfil()
+    {
+        await using var escopo = Escopo();
+        var servicos = escopo.ServiceProvider;
+        var usuarios = servicos.GetRequiredService<UserManager<Usuario>>();
+        var admin = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
+
+        // Simula a falha entre criar o usuário e dar o perfil (ou o perfil retirado depois).
+        Assert.True((await usuarios.RemoveFromRoleAsync(admin, PerfisPadrao.Administrador.Nome)).Succeeded);
+        try
+        {
+            await AcessoSeed.ExecutarAsync(servicos, new AdministradorInicial(
+                ImpaApiFactory.AdminUsuario, "outra-senha-do-env", "Outro nome"));
+
+            var depois = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
+            Assert.Equal([PerfisPadrao.Administrador.Nome], await usuarios.GetRolesAsync(depois));
+            // Usuário existente não é recriado nem tem senha ou nome trocados pelo seed.
+            Assert.Equal(admin.Id, depois.Id);
+            Assert.True(await usuarios.CheckPasswordAsync(depois, ImpaApiFactory.AdminSenha));
+            Assert.Equal(ImpaApiFactory.AdminNome, depois.NomeExibicao);
+        }
+        finally
+        {
+            var atual = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
+            if (!await usuarios.IsInRoleAsync(atual, PerfisPadrao.Administrador.Nome))
+                await usuarios.AddToRoleAsync(atual, PerfisPadrao.Administrador.Nome);
+        }
+    }
+
+    [Fact]
     public async Task Senha_com_7_caracteres_e_recusada_na_criacao()
     {
         await using var escopo = Escopo();

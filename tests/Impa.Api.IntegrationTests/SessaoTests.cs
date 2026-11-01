@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 
 namespace Impa.Api.IntegrationTests;
@@ -26,14 +27,18 @@ public class SessaoTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFactory>
     }
 
     [Fact]
-    public async Task Cookie_de_sessao_nao_e_persistente()
+    public async Task Cookie_de_sessao_e_persistente_e_expira_12_horas_apos_o_login()
     {
         var cliente = await ClienteApi.AbrirAsync(factory);
+        var momentoDoLogin = factory.Clock.GetUtcNow();
         await cliente.EntrarAsync(ImpaApiFactory.AdminUsuario, ImpaApiFactory.AdminSenha);
 
-        // Sem Expires/Max-Age: o navegador descarta ao fechar; o limite de 12 h está no tíquete.
-        var cookie = cliente.UltimosSetCookie["impa.sessao"].ToLowerInvariant();
-        Assert.DoesNotContain("expires=", cookie);
-        Assert.DoesNotContain("max-age=", cookie);
+        // Persistente (sobrevive a fechar o navegador/PWA), mas com o mesmo limite de 12 h do tíquete
+        // (decisão do usuário em 01/11/2026, achado A18).
+        var atributos = cliente.UltimosSetCookie["impa.sessao"].Split(';', StringSplitOptions.TrimEntries);
+        var expires = atributos.Single(a => a.StartsWith("expires=", StringComparison.OrdinalIgnoreCase));
+        var expira = DateTimeOffset.Parse(expires["expires=".Length..], CultureInfo.InvariantCulture);
+
+        Assert.InRange(expira, momentoDoLogin.AddHours(12).AddSeconds(-2), momentoDoLogin.AddHours(12).AddSeconds(2));
     }
 }

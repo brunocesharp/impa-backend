@@ -36,6 +36,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # /api/health por HTTP dentro do container (a imagem não tem curl/wget: bash com /dev/tcp).
+    # Saudável só depois das migrações e do seed, e com o banco respondendo.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /api/health HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 6
     restart: unless-stopped
 
   web:
@@ -53,8 +61,10 @@ services:
     volumes:
       - caddy-dados:/data
       - caddy-config:/config
+    # Só publica a SPA quando a API responde: sem 502 na subida nem nas atualizações.
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

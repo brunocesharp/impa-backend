@@ -28,6 +28,9 @@ public sealed class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifet
     /// <summary>Relógio controlado pelos testes (expiração da sessão).</summary>
     public FakeTimeProvider Clock { get; } = new(DateTimeOffset.UtcNow);
 
+    /// <summary>Hasher do Identity com contador de conferências (tempo do login de usuário inexistente).</summary>
+    public HasherContador Hasher { get; } = new();
+
     public string ConnectionString => _postgres.GetConnectionString();
 
     public async Task InitializeAsync() => await _postgres.StartAsync();
@@ -50,6 +53,8 @@ public sealed class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifet
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+            services.RemoveAll<IPasswordHasher<Usuario>>();
+            services.AddSingleton<IPasswordHasher<Usuario>>(Hasher);
         });
     }
 
@@ -68,11 +73,33 @@ public sealed class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifet
         Assert.True((await usuarios.AddToRoleAsync(novo, perfil)).Succeeded);
     }
 
-    /// <summary>Cliente HTTPS (o cookie de sessão é Secure) que guarda cookies e não segue redirecionamentos.</summary>
-    public HttpClient CriarCliente() => CreateClient(new WebApplicationFactoryClientOptions
+    /// <summary>
+    /// Cliente HTTPS (o cookie de sessão é Secure) que guarda cookies e não segue redirecionamentos.
+    /// <paramref name="https"/> = false simula a chamada direta por HTTP (healthcheck interno).
+    /// </summary>
+    public HttpClient CriarCliente(bool https = true) => CreateClient(new WebApplicationFactoryClientOptions
     {
-        BaseAddress = new Uri("https://localhost"),
+        BaseAddress = new Uri(https ? "https://localhost" : "http://localhost"),
         AllowAutoRedirect = false,
         HandleCookies = true,
     });
+}
+
+/// <summary><see cref="PasswordHasher{TUser}"/> padrão que conta as conferências de senha.</summary>
+public sealed class HasherContador : IPasswordHasher<Usuario>
+{
+    private readonly PasswordHasher<Usuario> _hasher = new();
+    private int _conferencias;
+
+    public int Conferencias => _conferencias;
+
+    public void Zerar() => Interlocked.Exchange(ref _conferencias, 0);
+
+    public string HashPassword(Usuario user, string password) => _hasher.HashPassword(user, password);
+
+    public PasswordVerificationResult VerifyHashedPassword(Usuario user, string hashedPassword, string providedPassword)
+    {
+        Interlocked.Increment(ref _conferencias);
+        return _hasher.VerifyHashedPassword(user, hashedPassword, providedPassword);
+    }
 }

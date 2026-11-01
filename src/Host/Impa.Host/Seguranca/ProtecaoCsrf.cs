@@ -30,6 +30,8 @@ public static class ProtecaoCsrf
     /// <summary>
     /// Depois da autenticação (o token é ligado à identidade) e antes da autorização: requisições seguras
     /// recebem um token novo; as que alteram estado, inclusive o login, precisam apresentar um válido.
+    /// Por HTTP sem TLS (healthcheck interno, <c>dotnet run</c> no perfil http) não há token: o cookie é Secure
+    /// e o antiforgery lança exceção fora de HTTPS. GETs seguem sem token; o que altera estado é recusado.
     /// </summary>
     public static IApplicationBuilder UseProtecaoCsrf(this IApplicationBuilder app) =>
         app.Use(async (contexto, proximo) =>
@@ -42,8 +44,8 @@ public static class ProtecaoCsrf
 
             if (AlteraEstado(contexto.Request.Method))
             {
-                var antiforgery = contexto.RequestServices.GetRequiredService<IAntiforgery>();
-                if (!await antiforgery.IsRequestValidAsync(contexto))
+                if (!contexto.Request.IsHttps
+                    || !await contexto.RequestServices.GetRequiredService<IAntiforgery>().IsRequestValidAsync(contexto))
                 {
                     contexto.Response.StatusCode = StatusCodes.Status400BadRequest;
                     await contexto.Response.WriteAsJsonAsync(new ErroDto(MensagemTokenInvalido));
@@ -61,6 +63,9 @@ public static class ProtecaoCsrf
     /// <summary>Emite o token para a identidade atual de <see cref="HttpContext.User"/> (usar após login e logout).</summary>
     public static void EmitirToken(HttpContext contexto)
     {
+        if (!contexto.Request.IsHttps)
+            return;
+
         var tokens = contexto.RequestServices.GetRequiredService<IAntiforgery>().GetAndStoreTokens(contexto);
         contexto.Response.Cookies.Append(CookieToken, tokens.RequestToken!, new CookieOptions
         {

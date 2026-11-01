@@ -64,6 +64,8 @@ docker image prune -f
 ```
 
 As migrações do banco rodam sozinhas quando a API sobe. As sessões abertas continuam valendo (chaves no volume).
+O `web` (Caddy) só sobe depois que o `healthcheck` da `api` (`GET /api/health` por HTTP dentro do container) responde
+200, então não há 502 enquanto a API inicia; o `ps` mostra `(healthy)`.
 
 ## Logs e situação
 
@@ -86,6 +88,7 @@ Os testes ponta a ponta do impa-frontend (Playwright) rodam contra esse ambiente
 
 ## Problemas comuns
 
+- **`web` não sobe e a `api` fica `(unhealthy)`:** a API não terminou as migrações ou não alcança o banco; veja `logs api`.
 - **Certificado não sai:** DNS ainda não propagou ou porta 80/443 fechada. `logs web` mostra o motivo.
 - **Login recusado com "token de segurança ausente ou inválido":** o navegador está numa aba antiga; recarregue.
 - **Todos deslogados depois de atualizar:** o volume `chaves-sessao` foi removido (`down -v`). Nunca use `-v` em homologação: também apaga o banco.
