@@ -11,6 +11,10 @@ Cada módulo segue Clean Architecture em quatro projetos. Um módulo nunca grava
 Impa.sln
 src/
 ├── Host/Impa.Host/                 # Composição: registro dos módulos, autenticação, pipeline HTTP
+│   ├── Endpoints/                  # Minimal APIs por assunto (auth, configuração, versão): request → MediatR → ResultadoHttp
+│   ├── Http/                       # ResultadoHttp: mapeamento único de Result (Ardalis) → HTTP e ErroDto { mensagem }
+│   ├── Pipeline/                   # Behaviors do MediatR: LoggingBehavior e ValidationBehavior (ADR-013)
+│   ├── Seguranca/                  # Sessão por cookie (ADR-006), autorização por permissão, proteção CSRF
 │   └── Persistence/                # HostDbContext (só extensões do PostgreSQL) e suas migrações
 ├── Shared/Impa.Shared/             # Tipos comuns entre módulos (ainda vazio) — não é módulo de negócio
 └── Modules/

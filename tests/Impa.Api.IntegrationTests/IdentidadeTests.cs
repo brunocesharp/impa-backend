@@ -67,14 +67,40 @@ public class IdentidadeTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFact
     }
 
     [Fact]
-    public async Task Seed_com_login_do_administrador_ja_existente_sem_perfil_so_devolve_o_perfil()
+    public async Task Seed_com_login_do_administrador_ja_existente_sem_perfil_e_mesma_senha_so_devolve_o_perfil()
     {
         await using var escopo = Escopo();
         var servicos = escopo.ServiceProvider;
         var usuarios = servicos.GetRequiredService<UserManager<Usuario>>();
         var admin = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
 
-        // Simula a falha entre criar o usuário e dar o perfil (ou o perfil retirado depois).
+        // Simula a falha entre criar o usuário e dar o perfil.
+        Assert.True((await usuarios.RemoveFromRoleAsync(admin, PerfisPadrao.Administrador.Nome)).Succeeded);
+        try
+        {
+            await AcessoSeed.ExecutarAsync(servicos, new AdministradorInicial(
+                ImpaApiFactory.AdminUsuario, ImpaApiFactory.AdminSenha, "Outro nome"));
+
+            var depois = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
+            Assert.Equal([PerfisPadrao.Administrador.Nome], await usuarios.GetRolesAsync(depois));
+            // Usuário existente não é recriado nem tem o nome trocado pelo seed.
+            Assert.Equal(admin.Id, depois.Id);
+            Assert.Equal(ImpaApiFactory.AdminNome, depois.NomeExibicao);
+        }
+        finally
+        {
+            await RestaurarAdministradorAsync(usuarios);
+        }
+    }
+
+    [Fact]
+    public async Task Seed_nao_promove_login_existente_com_senha_diferente_da_do_env()
+    {
+        await using var escopo = Escopo();
+        var servicos = escopo.ServiceProvider;
+        var usuarios = servicos.GetRequiredService<UserManager<Usuario>>();
+        var admin = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
+
         Assert.True((await usuarios.RemoveFromRoleAsync(admin, PerfisPadrao.Administrador.Nome)).Succeeded);
         try
         {
@@ -82,18 +108,49 @@ public class IdentidadeTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFact
                 ImpaApiFactory.AdminUsuario, "outra-senha-do-env", "Outro nome"));
 
             var depois = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
-            Assert.Equal([PerfisPadrao.Administrador.Nome], await usuarios.GetRolesAsync(depois));
-            // Usuário existente não é recriado nem tem senha ou nome trocados pelo seed.
-            Assert.Equal(admin.Id, depois.Id);
+            Assert.Empty(await usuarios.GetRolesAsync(depois));
             Assert.True(await usuarios.CheckPasswordAsync(depois, ImpaApiFactory.AdminSenha));
-            Assert.Equal(ImpaApiFactory.AdminNome, depois.NomeExibicao);
         }
         finally
         {
-            var atual = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
-            if (!await usuarios.IsInRoleAsync(atual, PerfisPadrao.Administrador.Nome))
-                await usuarios.AddToRoleAsync(atual, PerfisPadrao.Administrador.Nome);
+            await RestaurarAdministradorAsync(usuarios);
         }
+    }
+
+    [Fact]
+    public async Task Seed_nao_promove_login_existente_que_ja_tem_outro_perfil()
+    {
+        await using var escopo = Escopo();
+        var servicos = escopo.ServiceProvider;
+        var usuarios = servicos.GetRequiredService<UserManager<Usuario>>();
+        var admin = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
+
+        // Login reaproveitado por um operador (a partir da 1.3/1.4), com a mesma senha do .env.
+        Assert.True((await usuarios.RemoveFromRoleAsync(admin, PerfisPadrao.Administrador.Nome)).Succeeded);
+        Assert.True((await usuarios.AddToRoleAsync(admin, PerfisPadrao.OperadorDeCaixa.Nome)).Succeeded);
+        try
+        {
+            await AcessoSeed.ExecutarAsync(servicos, new AdministradorInicial(
+                ImpaApiFactory.AdminUsuario, ImpaApiFactory.AdminSenha, ImpaApiFactory.AdminNome));
+
+            var depois = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
+            Assert.Equal([PerfisPadrao.OperadorDeCaixa.Nome], await usuarios.GetRolesAsync(depois));
+        }
+        finally
+        {
+            await RestaurarAdministradorAsync(usuarios);
+        }
+    }
+
+    private static async Task RestaurarAdministradorAsync(UserManager<Usuario> usuarios)
+    {
+        var atual = (await usuarios.FindByNameAsync(ImpaApiFactory.AdminUsuario))!;
+        var perfis = await usuarios.GetRolesAsync(atual);
+        var outros = perfis.Where(p => p != PerfisPadrao.Administrador.Nome).ToList();
+        if (outros.Count > 0)
+            await usuarios.RemoveFromRolesAsync(atual, outros);
+        if (!perfis.Contains(PerfisPadrao.Administrador.Nome))
+            await usuarios.AddToRoleAsync(atual, PerfisPadrao.Administrador.Nome);
     }
 
     [Fact]

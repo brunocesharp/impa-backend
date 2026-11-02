@@ -57,6 +57,7 @@ builder.Services.AddHealthChecks().AddDbContextCheck<HostDbContext>("banco");
 var app = builder.Build();
 
 await app.InicializarBancoAsync();
+app.Services.PrepararAcesso();
 
 app.UseForwardedHeaders();
 app.UseAuthentication();

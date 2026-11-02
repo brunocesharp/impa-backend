@@ -9,7 +9,10 @@ public interface ISessaoService
     /// <summary>Id do usuário com esse login; <c>null</c> se não existe.</summary>
     Task<Guid?> BuscarUsuarioAsync(string login, CancellationToken ct);
 
-    /// <summary>Confere a senha do usuário (sem abrir sessão).</summary>
+    /// <summary>
+    /// Confere a senha do usuário, sem abrir sessão. Primitiva pura: sempre calcula o hash e não olha bloqueio
+    /// nem se a conta pode entrar — essas decisões ficam no handler (bloqueio por tentativas na story 1.2).
+    /// </summary>
     Task<bool> SenhaConfereAsync(Guid usuarioId, string senha, CancellationToken ct);
 
     /// <summary>

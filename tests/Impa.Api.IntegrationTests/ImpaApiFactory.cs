@@ -85,17 +85,28 @@ public sealed class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifet
     });
 }
 
-/// <summary><see cref="PasswordHasher{TUser}"/> padrão que conta as conferências de senha.</summary>
+/// <summary><see cref="PasswordHasher{TUser}"/> padrão que conta os hashes calculados e as conferências de senha.</summary>
 public sealed class HasherContador : IPasswordHasher<Usuario>
 {
     private readonly PasswordHasher<Usuario> _hasher = new();
+    private int _hashes;
     private int _conferencias;
+
+    public int Hashes => _hashes;
 
     public int Conferencias => _conferencias;
 
-    public void Zerar() => Interlocked.Exchange(ref _conferencias, 0);
+    public void Zerar()
+    {
+        Interlocked.Exchange(ref _hashes, 0);
+        Interlocked.Exchange(ref _conferencias, 0);
+    }
 
-    public string HashPassword(Usuario user, string password) => _hasher.HashPassword(user, password);
+    public string HashPassword(Usuario user, string password)
+    {
+        Interlocked.Increment(ref _hashes);
+        return _hasher.HashPassword(user, password);
+    }
 
     public PasswordVerificationResult VerifyHashedPassword(Usuario user, string hashedPassword, string providedPassword)
     {
