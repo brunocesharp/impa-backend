@@ -11,11 +11,9 @@ public sealed class SessaoService(
     SignInManager<Usuario> signInManager,
     UserManager<Usuario> userManager,
     IPasswordHasher<Usuario> passwordHasher,
+    HashFicticio hashFicticio,
     IHttpContextAccessor httpContextAccessor) : ISessaoService
 {
-    // Hash de uma senha aleatória, calculado uma vez com o mesmo hasher (mesmo algoritmo e iterações).
-    private static string? _hashFicticio;
-
     private HttpContext Contexto => httpContextAccessor.HttpContext
         ?? throw new InvalidOperationException("Sessão usada fora de uma requisição HTTP.");
 
@@ -28,15 +26,15 @@ public sealed class SessaoService(
         if (usuario is null)
             return false;
 
-        var resultado = await signInManager.CheckPasswordSignInAsync(usuario, senha, lockoutOnFailure: false);
-        return resultado.Succeeded;
+        // Primitiva pura: sempre calcula o hash, sem olhar bloqueio nem se a conta pode entrar.
+        // Essas decisões são do handler (ADR-013, regra 2; bloqueio na story 1.2).
+        return await userManager.CheckPasswordAsync(usuario, senha);
     }
 
     public Task ConferirSenhaFicticiaAsync(string senha, CancellationToken ct)
     {
         var ficticio = new Usuario();
-        _hashFicticio ??= passwordHasher.HashPassword(ficticio, Guid.NewGuid().ToString("N"));
-        passwordHasher.VerifyHashedPassword(ficticio, _hashFicticio, senha);
+        passwordHasher.VerifyHashedPassword(ficticio, hashFicticio.Obter(passwordHasher), senha);
         return Task.CompletedTask;
     }
 

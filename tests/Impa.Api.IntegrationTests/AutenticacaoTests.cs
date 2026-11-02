@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
+using Impa.Modules.Acesso.Application.Autenticacao;
 using Impa.Modules.Acesso.Application.Perfis;
 using Impa.Modules.Acesso.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Impa.Api.IntegrationTests;
@@ -90,6 +92,38 @@ public class AutenticacaoTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFa
 
         Assert.Equal(1, conferenciasSenhaErrada);
         Assert.Equal(conferenciasSenhaErrada, factory.Hasher.Conferencias);
+    }
+
+    [Fact]
+    public async Task Hash_ficticio_ja_esta_pronto_antes_do_primeiro_login_inexistente()
+    {
+        var cliente = await ClienteApi.AbrirAsync(factory); // Host no ar
+        factory.Hasher.Zerar();
+
+        await cliente.EntrarAsync("nao-existe-ainda", "errada123");
+
+        // Só a conferência: nenhum PBKDF2 a mais calculando o hash fictício nesta requisição (R15).
+        Assert.Equal(0, factory.Hasher.Hashes);
+        Assert.Equal(1, factory.Hasher.Conferencias);
+    }
+
+    [Fact]
+    public async Task Conferencia_de_senha_e_primitiva_pura_mesmo_com_a_conta_bloqueada()
+    {
+        await factory.CriarUsuarioAsync("bloqueada", "senha-certa-123", "Bloqueada", PerfisPadrao.OperadorDeCaixa.Nome);
+        await using var escopo = factory.Services.CreateAsyncScope();
+        var usuarios = escopo.ServiceProvider.GetRequiredService<UserManager<Usuario>>();
+        var usuario = (await usuarios.FindByNameAsync("bloqueada"))!;
+        await usuarios.SetLockoutEnabledAsync(usuario, true);
+        await usuarios.SetLockoutEndDateAsync(usuario, DateTimeOffset.UtcNow.AddYears(1));
+        var sessao = escopo.ServiceProvider.GetRequiredService<ISessaoService>();
+
+        factory.Hasher.Zerar();
+        var confere = await sessao.SenhaConfereAsync(usuario.Id, "senha-certa-123", CancellationToken.None);
+
+        // Bloqueio é decisão do handler (story 1.2); a primitiva sempre calcula o hash (R16).
+        Assert.True(confere);
+        Assert.Equal(1, factory.Hasher.Conferencias);
     }
 
     [Fact]

@@ -23,12 +23,17 @@ public static class AutenticacaoEndpoints
             .WithSummary("Entra com usuário e senha e abre a sessão por cookie")
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ErroDto>(StatusCodes.Status401Unauthorized)
-            .ProducesValidationProblem();
+            // Dois 400 com corpos diferentes; a SPA escolhe o tratamento pela forma do corpo:
+            // ValidationProblem (errors.Usuario/errors.Senha) e { mensagem } do CSRF (token ausente ou vencido).
+            .ProducesValidationProblem()
+            .Produces<ErroDto>(StatusCodes.Status400BadRequest);
 
         grupo.MapPost("/logout", Sair)
             .WithName("Sair")
             .WithSummary("Encerra a sessão")
             .Produces(StatusCodes.Status204NoContent)
+            // Sessão já vencida: o token XSRF era da identidade anterior → 400 { mensagem } do CSRF.
+            .Produces<ErroDto>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized);
 
         grupo.MapGet("/me", ObterSessaoAtual)

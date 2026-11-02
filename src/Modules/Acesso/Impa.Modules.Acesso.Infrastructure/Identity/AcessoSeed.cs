@@ -36,8 +36,10 @@ public static class AcessoSeed
             return;
         }
 
-        // O login já pode existir sem o perfil (falha entre as duas gravações abaixo, ou perfil retirado):
-        // só devolve o perfil, sem recriar nem trocar senha/nome — senão toda subida lançaria DuplicateUserName.
+        // O login já pode existir sem o perfil (falha entre as duas gravações abaixo): só devolve o perfil,
+        // sem recriar nem trocar senha/nome — senão toda subida lançaria DuplicateUserName. Mas só se for
+        // mesmo a conta do .env (mesma senha) e sem outro perfil: um login reaproveitado por outra pessoa
+        // não vira Administrador numa reinicialização.
         var usuario = await usuarios.FindByNameAsync(administrador.Usuario);
         if (usuario is null)
         {
@@ -45,10 +47,19 @@ public static class AcessoSeed
             Verificar(await usuarios.CreateAsync(usuario, administrador.Senha), "criar o primeiro administrador");
             log.LogInformation("Primeiro administrador {Usuario} criado.", administrador.Usuario);
         }
+        else if (!await usuarios.CheckPasswordAsync(usuario, administrador.Senha)
+                 || (await usuarios.GetRolesAsync(usuario)).Count > 0)
+        {
+            log.LogError(
+                "Nenhum usuário com o perfil Administrador, e {Usuario} (IMPA_ADMIN_USUARIO) já existe com outra senha "
+                + "ou outro perfil: o perfil Administrador não foi dado. Corrija IMPA_ADMIN_USUARIO/IMPA_ADMIN_SENHA.",
+                administrador.Usuario);
+            return;
+        }
         else
         {
             log.LogWarning(
-                "Nenhum usuário com o perfil Administrador; {Usuario} (IMPA_ADMIN_USUARIO) já existe e recebe o perfil.",
+                "Nenhum usuário com o perfil Administrador; {Usuario} (IMPA_ADMIN_USUARIO) já existe sem perfil e recebe o perfil.",
                 administrador.Usuario);
         }
 

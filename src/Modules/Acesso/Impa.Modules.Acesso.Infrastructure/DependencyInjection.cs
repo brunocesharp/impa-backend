@@ -20,6 +20,7 @@ public static class DependencyInjection
             npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", AcessoDbContext.Schema)));
 
         services.AddHttpContextAccessor();
+        services.AddSingleton<HashFicticio>();
         services.AddScoped<ISessaoService, SessaoService>();
 
         return services
@@ -38,4 +39,11 @@ public static class DependencyInjection
             .AddEntityFrameworkStores<AcessoDbContext>()
             .AddSignInManager();
     }
+
+    /// <summary>
+    /// Prepara o módulo antes da primeira requisição (chamado pelo Host depois do <c>Build</c>):
+    /// calcula o hash fictício do login de usuário inexistente.
+    /// </summary>
+    public static void PrepararAcesso(this IServiceProvider servicos) =>
+        servicos.GetRequiredService<HashFicticio>().Preparar(servicos);
 }
