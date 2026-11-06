@@ -12,6 +12,7 @@ public interface ISessaoService
     /// <summary>
     /// Confere a senha do usuário, sem abrir sessão. Primitiva pura: sempre calcula o hash e não olha bloqueio
     /// nem se a conta pode entrar — essas decisões ficam no handler (bloqueio por tentativas na story 1.2).
+    /// Conta sem senha guardada confere contra o hash fictício e devolve <c>false</c>, com o mesmo custo.
     /// </summary>
     Task<bool> SenhaConfereAsync(Guid usuarioId, string senha, CancellationToken ct);
 
