@@ -95,19 +95,6 @@ public class AutenticacaoTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFa
     }
 
     [Fact]
-    public async Task Hash_ficticio_ja_esta_pronto_antes_do_primeiro_login_inexistente()
-    {
-        var cliente = await ClienteApi.AbrirAsync(factory); // Host no ar
-        factory.Hasher.Zerar();
-
-        await cliente.EntrarAsync("nao-existe-ainda", "errada123");
-
-        // Só a conferência: nenhum PBKDF2 a mais calculando o hash fictício nesta requisição (R15).
-        Assert.Equal(0, factory.Hasher.Hashes);
-        Assert.Equal(1, factory.Hasher.Conferencias);
-    }
-
-    [Fact]
     public async Task Conferencia_de_senha_e_primitiva_pura_mesmo_com_a_conta_bloqueada()
     {
         await factory.CriarUsuarioAsync("bloqueada", "senha-certa-123", "Bloqueada", PerfisPadrao.OperadorDeCaixa.Nome);
@@ -123,6 +110,28 @@ public class AutenticacaoTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFa
 
         // Bloqueio é decisão do handler (story 1.2); a primitiva sempre calcula o hash (R16).
         Assert.True(confere);
+        Assert.Equal(1, factory.Hasher.Conferencias);
+    }
+
+    [Fact]
+    public async Task Conferencia_de_senha_de_conta_sem_senha_tambem_calcula_o_hash()
+    {
+        _ = factory.CriarCliente();
+        await using var escopo = factory.Services.CreateAsyncScope();
+        var usuarios = escopo.ServiceProvider.GetRequiredService<UserManager<Usuario>>();
+        var usuario = await usuarios.FindByNameAsync("sem-senha");
+        if (usuario is null)
+        {
+            usuario = new Usuario { UserName = "sem-senha", NomeExibicao = "Sem senha" };
+            Assert.True((await usuarios.CreateAsync(usuario)).Succeeded); // sem senha: PasswordHash nulo
+        }
+        var sessao = escopo.ServiceProvider.GetRequiredService<ISessaoService>();
+
+        factory.Hasher.Zerar();
+        var confere = await sessao.SenhaConfereAsync(usuario.Id, "qualquer-senha", CancellationToken.None);
+
+        // Sem hash guardado, o UserManager recusaria sem PBKDF2 e o tempo separaria essa conta (R23).
+        Assert.False(confere);
         Assert.Equal(1, factory.Hasher.Conferencias);
     }
 

@@ -28,6 +28,13 @@ public sealed class SessaoService(
 
         // Primitiva pura: sempre calcula o hash, sem olhar bloqueio nem se a conta pode entrar.
         // Essas decisões são do handler (ADR-013, regra 2; bloqueio na story 1.2).
+        if (usuario.PasswordHash is null)
+        {
+            // Conta sem senha: o UserManager recusaria sem PBKDF2 e o tempo separaria essa conta das outras.
+            await ConferirSenhaFicticiaAsync(senha, ct);
+            return false;
+        }
+
         return await userManager.CheckPasswordAsync(usuario, senha);
     }
 
