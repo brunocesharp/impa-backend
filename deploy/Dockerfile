@@ -3,12 +3,22 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Restauração em camada própria: só refaz quando um .csproj muda.
+# Todo projeto novo em src/ (ex.: um módulo novo) precisa de uma linha aqui; sem ela, o publish falha
+# com NETSDK1004 ("project.assets.json not found").
 COPY global.json Directory.Build.props ./
 COPY src/Shared/Impa.Shared/*.csproj src/Shared/Impa.Shared/
 COPY src/Modules/Acesso/Impa.Modules.Acesso.Domain/*.csproj src/Modules/Acesso/Impa.Modules.Acesso.Domain/
 COPY src/Modules/Acesso/Impa.Modules.Acesso.Contracts/*.csproj src/Modules/Acesso/Impa.Modules.Acesso.Contracts/
 COPY src/Modules/Acesso/Impa.Modules.Acesso.Application/*.csproj src/Modules/Acesso/Impa.Modules.Acesso.Application/
 COPY src/Modules/Acesso/Impa.Modules.Acesso.Infrastructure/*.csproj src/Modules/Acesso/Impa.Modules.Acesso.Infrastructure/
+COPY src/Modules/Configuracao/Impa.Modules.Configuracao.Domain/*.csproj src/Modules/Configuracao/Impa.Modules.Configuracao.Domain/
+COPY src/Modules/Configuracao/Impa.Modules.Configuracao.Contracts/*.csproj src/Modules/Configuracao/Impa.Modules.Configuracao.Contracts/
+COPY src/Modules/Configuracao/Impa.Modules.Configuracao.Application/*.csproj src/Modules/Configuracao/Impa.Modules.Configuracao.Application/
+COPY src/Modules/Configuracao/Impa.Modules.Configuracao.Infrastructure/*.csproj src/Modules/Configuracao/Impa.Modules.Configuracao.Infrastructure/
+COPY src/Modules/Pessoas/Impa.Modules.Pessoas.Domain/*.csproj src/Modules/Pessoas/Impa.Modules.Pessoas.Domain/
+COPY src/Modules/Pessoas/Impa.Modules.Pessoas.Contracts/*.csproj src/Modules/Pessoas/Impa.Modules.Pessoas.Contracts/
+COPY src/Modules/Pessoas/Impa.Modules.Pessoas.Application/*.csproj src/Modules/Pessoas/Impa.Modules.Pessoas.Application/
+COPY src/Modules/Pessoas/Impa.Modules.Pessoas.Infrastructure/*.csproj src/Modules/Pessoas/Impa.Modules.Pessoas.Infrastructure/
 COPY src/Host/Impa.Host/*.csproj src/Host/Impa.Host/
 RUN dotnet restore src/Host/Impa.Host/Impa.Host.csproj
 

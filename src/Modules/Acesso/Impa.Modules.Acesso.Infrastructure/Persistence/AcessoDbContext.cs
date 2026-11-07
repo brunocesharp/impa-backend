@@ -1,5 +1,6 @@
 using Impa.Modules.Acesso.Infrastructure.Identity;
 using Impa.Modules.Acesso.Infrastructure.Sessoes;
+using Impa.Modules.Acesso.Infrastructure.Terminais;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,8 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
     public const string Schema = "acesso";
 
     public DbSet<Sessao> Sessoes => Set<Sessao>();
+
+    public DbSet<Terminal> Terminais => Set<Terminal>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,6 +41,19 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
             b.Property(s => s.Tiquete).IsRequired();
             b.HasOne<Usuario>().WithMany().HasForeignKey(s => s.UsuarioId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(s => s.UsuarioId); // desativar revoga todas as sessões do usuário
+        });
+        modelBuilder.Entity<Terminal>(b =>
+        {
+            b.ToTable("terminais");
+            b.HasKey(t => t.Id);
+            b.Property(t => t.Id).ValueGeneratedNever();
+            b.Property(t => t.Nome).HasMaxLength(Terminal.NomeMaximo).IsRequired();
+            b.Property(t => t.NomeNormalizado).HasMaxLength(Terminal.NomeMaximo).IsRequired();
+            b.Property(t => t.TokenHash).IsRequired();
+            b.HasIndex(t => t.TokenHash).IsUnique(); // busca do terminal a cada requisição de PDV/caixa
+            // Nome único só entre os ativos: revogado o terminal, o mesmo nome pode ser registrado de novo.
+            b.HasIndex(t => t.NomeNormalizado).IsUnique().HasFilter("\"RevogadoEm\" IS NULL");
+            b.HasOne<Usuario>().WithMany().HasForeignKey(t => t.CriadoPor).OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<Perfil>(b =>
         {
