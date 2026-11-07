@@ -63,11 +63,17 @@ public sealed class PermissoesDoUsuario(AcessoDbContext banco, CacheDePermissoes
                 join r in banco.Roles on ur.RoleId equals r.Id
                 where ur.UserId == usuarioId && u.Ativo
                 orderby r.Name
-                select new { r.Id, r.Name })
+                select new { r.Id, r.Name, u.TrocaDeSenhaObrigatoria })
             .FirstOrDefaultAsync(ct);
 
         var carregadas = PermissoesCarregadas.Nenhuma;
-        if (perfil is not null)
+        if (perfil is null)
+        {
+            // Sem perfil não há permissão, mas a senha provisória continua prendendo o usuário na troca (RN-1.8).
+            if (await banco.Users.AnyAsync(u => u.Id == usuarioId && u.Ativo && u.TrocaDeSenhaObrigatoria, ct))
+                carregadas = PermissoesCarregadas.Nenhuma with { TrocaDeSenhaObrigatoria = true };
+        }
+        else
         {
             var codigos = await banco.RoleClaims
                 .Where(c => c.RoleId == perfil.Id && c.ClaimType == Permissoes.ClaimType)
@@ -76,7 +82,7 @@ public sealed class PermissoesDoUsuario(AcessoDbContext banco, CacheDePermissoes
 
             // Só o que está no catálogo: uma claim antiga ou digitada no banco não vira permissão.
             carregadas = new PermissoesCarregadas(perfil.Name ?? string.Empty,
-                codigos.Where(Permissoes.Existe).ToHashSet(StringComparer.Ordinal));
+                codigos.Where(Permissoes.Existe).ToHashSet(StringComparer.Ordinal), perfil.TrocaDeSenhaObrigatoria);
         }
 
         cache.Guardar(usuarioId, geracao, carregadas);

@@ -138,6 +138,6 @@ public sealed class SessaoService(
         var atuais = await permissoesDoUsuario.ObterAsync(usuario.Id, ct);
         var permissoes = atuais.Permissoes.Order(StringComparer.Ordinal).ToList();
 
-        return new SessaoDto(usuario.UserName!, usuario.NomeExibicao, atuais.Perfil, permissoes);
+        return new SessaoDto(usuario.UserName!, usuario.NomeExibicao, atuais.Perfil, permissoes, usuario.TrocaDeSenhaObrigatoria);
     }
 }

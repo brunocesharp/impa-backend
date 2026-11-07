@@ -107,6 +107,9 @@ namespace Impa.Modules.Acesso.Infrastructure.Persistence.Migrations
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("text");
 
+                    b.Property<bool>("TrocaDeSenhaObrigatoria")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("boolean");
 

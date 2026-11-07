@@ -1,4 +1,5 @@
 using Impa.Modules.Acesso.Application.Autenticacao;
+using Impa.Modules.Acesso.Application.Autenticacao.Commands.TrocarSenha;
 using Impa.Modules.Acesso.Application.Perfis;
 using Impa.Modules.Acesso.Application.Usuarios;
 using Impa.Modules.Acesso.Infrastructure.Identity;
@@ -32,7 +33,10 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddSingleton<HashFicticio>();
         services.AddScoped<ISessaoService, SessaoService>();
-        services.AddScoped<IGestaoUsuarios, GestaoUsuarios>();
+        services.AddScoped<GestaoUsuarios>();
+        services.AddScoped<IGestaoUsuarios>(s => s.GetRequiredService<GestaoUsuarios>());
+        services.AddScoped<ICadastroUsuarios>(s => s.GetRequiredService<GestaoUsuarios>());
+        services.AddScoped<ITrocaDeSenha, TrocaDeSenha>();
         services.AddScoped<IGestaoPerfis, GestaoPerfis>();
         services.AddSingleton<CacheDePermissoes>();
         services.AddScoped<IPermissoesDoUsuario, PermissoesDoUsuario>();

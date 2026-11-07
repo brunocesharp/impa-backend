@@ -27,6 +27,7 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
             // Sem HasDefaultValue: com default true, o EF trocaria um false explícito pelo default no insert.
             // Os usuários já existentes recebem true na migração BloqueioESessoes.
             b.Property(u => u.Ativo);
+            b.Property(u => u.TrocaDeSenhaObrigatoria); // os existentes recebem false na migração GestaoDeUsuarios
         });
 
         modelBuilder.Entity<Sessao>(b =>
