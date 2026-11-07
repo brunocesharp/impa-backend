@@ -1,0 +1,88 @@
+using Impa.Modules.Financeiro.Application.Categorias;
+using Impa.Modules.Financeiro.Application.Contas;
+using Impa.Modules.Financeiro.Domain;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+
+namespace Impa.Modules.Financeiro.Infrastructure.Persistence;
+
+internal sealed class CategoriasRepository(FinanceiroDbContext db) : ICategoriasRepository
+{
+    public Task<CategoriaFinanceira?> ObterAsync(Guid id, CancellationToken ct) =>
+        db.Categorias.FirstOrDefaultAsync(c => c.Id == id, ct);
+
+    public Task<CategoriaFinanceira?> ObterPorNomeAsync(string nome, Guid? exceto, CancellationToken ct)
+    {
+        var minusculo = nome.ToLower();
+        return db.Categorias.AsNoTracking()
+            .Where(c => c.Nome.ToLower() == minusculo && (exceto == null || c.Id != exceto))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<CategoriaFinanceira>> ListarAsync(bool incluirInativas, CancellationToken ct)
+    {
+        var consulta = db.Categorias.AsNoTracking();
+        if (!incluirInativas)
+            consulta = consulta.Where(c => c.Ativa);
+        return await consulta.OrderBy(c => c.Nome).ThenBy(c => c.Id).ToListAsync(ct);
+    }
+
+    public async Task<bool> AdicionarAsync(CategoriaFinanceira categoria, CancellationToken ct)
+    {
+        db.Categorias.Add(categoria);
+        return await SalvarAsync(ct);
+    }
+
+    /// <summary>O índice único do nome recusou (23505): desfaz o rastreamento para o contexto seguir utilizável.</summary>
+    public async Task<bool> SalvarAsync(CancellationToken ct)
+    {
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+                                           { SqlState: PostgresErrorCodes.UniqueViolation } pg
+                                           && pg.ConstraintName == IndicesUnicos.NomeDaCategoria)
+        {
+            db.ChangeTracker.Clear();
+            return false;
+        }
+    }
+
+    public async Task RemoverAsync(CategoriaFinanceira categoria, CancellationToken ct)
+    {
+        db.Categorias.Remove(categoria);
+        await db.SaveChangesAsync(ct);
+    }
+}
+
+internal sealed class ContasRepository(FinanceiroDbContext db) : IContasRepository
+{
+    public Task<Conta?> ObterAsync(Guid id, CancellationToken ct) => db.Contas.FirstOrDefaultAsync(c => c.Id == id, ct);
+
+    public async Task<IReadOnlyList<Conta>> ListarAsync(CancellationToken ct) =>
+        await db.Contas.AsNoTracking()
+            .OrderBy(c => c.Vencimento).ThenBy(c => c.Descricao).ThenBy(c => c.Parcela).ThenBy(c => c.Id)
+            .ToListAsync(ct);
+
+    public async Task AdicionarAsync(IReadOnlyList<Conta> contas, CancellationToken ct)
+    {
+        db.Contas.AddRange(contas);
+        await db.SaveChangesAsync(ct); // um SaveChanges = uma transação: todas as parcelas ou nenhuma
+    }
+
+    public Task SalvarAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
+
+    public async Task RemoverAsync(Conta conta, CancellationToken ct)
+    {
+        db.Contas.Remove(conta);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public Task<bool> ExisteDaCategoriaAsync(Guid categoriaId, CancellationToken ct) =>
+        db.Contas.AnyAsync(c => c.CategoriaId == categoriaId, ct);
+
+    public Task<bool> ExisteDoFornecedorAsync(Guid fornecedorId, CancellationToken ct) =>
+        db.Contas.AnyAsync(c => c.FornecedorId == fornecedorId, ct);
+}

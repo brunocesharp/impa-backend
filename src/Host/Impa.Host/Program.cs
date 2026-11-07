@@ -6,6 +6,8 @@ using Impa.Host.Pipeline;
 using Impa.Host.Seguranca;
 using Impa.Modules.Acesso.Application;
 using Impa.Modules.Acesso.Infrastructure;
+using Impa.Modules.Financeiro.Application;
+using Impa.Modules.Financeiro.Infrastructure;
 using Impa.Modules.Pessoas.Application;
 using Impa.Modules.Pessoas.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
@@ -24,6 +26,7 @@ builder.Services.AddDbContext<HostDbContext>(options => options.UseNpgsql(
 // Módulos
 builder.Services.AddAcessoModule(connectionString);
 builder.Services.AddPessoasModule(connectionString);
+builder.Services.AddFinanceiroModule(connectionString);
 
 // Casos de uso: handlers (MediatR) e validators (FluentValidation) de cada módulo
 builder.Services.AddMediatR(cfg =>
@@ -31,11 +34,13 @@ builder.Services.AddMediatR(cfg =>
     cfg.LicenseKey = builder.Configuration["MediatR:LicenseKey"];
     cfg.RegisterServicesFromAssembly(AcessoApplication.Assembly);
     cfg.RegisterServicesFromAssembly(PessoasApplication.Assembly);
+    cfg.RegisterServicesFromAssembly(FinanceiroApplication.Assembly);
     cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));
     cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
 });
 builder.Services.AddValidatorsFromAssembly(AcessoApplication.Assembly);
 builder.Services.AddValidatorsFromAssembly(PessoasApplication.Assembly);
+builder.Services.AddValidatorsFromAssembly(FinanceiroApplication.Assembly);
 
 // Integration events (ADR-011): despachante dos Outbox, espera por chave e reprocessamento.
 // Cada módulo registra o próprio Outbox e os próprios handlers.
@@ -85,6 +90,7 @@ app.MapConfiguracaoEndpoints();
 app.MapPerfisEndpoints();
 app.MapUsuariosEndpoints();
 app.MapPessoasEndpoints();
+app.MapFinanceiroEndpoints();
 app.MapMensageriaEndpoints();
 app.MapVersaoEndpoints();
 foreach (var adicionais in app.Services.GetServices<IEndpointsAdicionais>())
