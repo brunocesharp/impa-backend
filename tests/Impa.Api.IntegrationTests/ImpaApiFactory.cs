@@ -11,8 +11,10 @@ namespace Impa.Api.IntegrationTests;
 
 /// <summary>
 /// API real (Program do Host) contra um PostgreSQL em container. Um banco por classe de teste.
+/// O limite de tentativas de login vem alto (os testes fazem muitos logins do mesmo cliente);
+/// uma classe que testa o limite herda e sobrescreve <see cref="TentativasDeLogin"/> e <see cref="JanelaDeLoginEmSegundos"/>.
 /// </summary>
-public sealed class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string AdminUsuario = "admin";
     public const string AdminSenha = "admin-homolog-2026";
@@ -33,6 +35,12 @@ public sealed class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifet
 
     public string ConnectionString => _postgres.GetConnectionString();
 
+    /// <summary>Tentativas de login por IP na janela (<c>Autenticacao:LimiteDeLogin:Tentativas</c>).</summary>
+    protected virtual int TentativasDeLogin => 1_000_000;
+
+    /// <summary>Janela deslizante do limite de login (<c>Autenticacao:LimiteDeLogin:JanelaEmSegundos</c>).</summary>
+    public virtual int JanelaDeLoginEmSegundos => 60;
+
     public async Task InitializeAsync() => await _postgres.StartAsync();
 
     async Task IAsyncLifetime.DisposeAsync()
@@ -49,6 +57,8 @@ public sealed class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifet
         builder.UseSetting("IMPA_ADMIN_SENHA", AdminSenha);
         builder.UseSetting("IMPA_ADMIN_NOME", AdminNome);
         builder.UseSetting("Empresa:Nome", NomeEmpresa);
+        builder.UseSetting("Autenticacao:LimiteDeLogin:Tentativas", TentativasDeLogin.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.UseSetting("Autenticacao:LimiteDeLogin:JanelaEmSegundos", JanelaDeLoginEmSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<TimeProvider>();

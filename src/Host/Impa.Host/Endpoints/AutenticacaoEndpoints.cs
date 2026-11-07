@@ -23,6 +23,7 @@ public static class AutenticacaoEndpoints
 
         grupo.MapPost("/login", Entrar)
             .AllowAnonymous()
+            .RequireRateLimiting(LimiteDeLogin.Politica)
             .WithName("Entrar")
             .WithSummary("Entra com usuário e senha e abre a sessão por cookie")
             .Produces(StatusCodes.Status204NoContent)
@@ -31,7 +32,9 @@ public static class AutenticacaoEndpoints
             // Dois 400 com corpos diferentes; a SPA escolhe o tratamento pela forma do corpo:
             // ValidationProblem (errors.Usuario/errors.Senha) e { mensagem } do CSRF (token ausente ou vencido).
             .ProducesValidationProblem()
-            .Produces<ErroDto>(StatusCodes.Status400BadRequest);
+            .Produces<ErroDto>(StatusCodes.Status400BadRequest)
+            // Limite por IP (story 1-10): 429 { mensagem } com Retry-After, sem chegar ao caso de uso.
+            .Produces<ErroDto>(StatusCodes.Status429TooManyRequests);
 
         grupo.MapPost("/logout", Sair)
             .WithName("Sair")

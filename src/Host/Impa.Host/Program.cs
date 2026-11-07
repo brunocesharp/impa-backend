@@ -41,6 +41,7 @@ if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } caminhoC
 builder.Services.AddAutenticacaoPorCookie();
 builder.Services.AddAutorizacaoPorPermissao();
 builder.Services.AddProtecaoCsrf();
+builder.Services.AddLimiteDeLogin(builder.Configuration);
 
 // Atrás do Caddy (TLS termina no proxy): esquema e IP do cliente vêm dos cabeçalhos X-Forwarded-*.
 // A API só é alcançável pela rede interna do compose, então qualquer proxy dessa rede é confiável.
@@ -60,6 +61,7 @@ await app.InicializarBancoAsync();
 app.Services.PrepararAcesso();
 
 app.UseForwardedHeaders();
+app.UseLimiteDeLogin(); // depois do X-Forwarded-For: o limite é por IP do cliente
 app.UseAuthentication();
 app.UseProtecaoCsrf();
 app.UseAuthorization();
