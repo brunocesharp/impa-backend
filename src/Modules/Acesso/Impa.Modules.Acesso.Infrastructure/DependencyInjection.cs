@@ -1,14 +1,23 @@
 using Impa.Modules.Acesso.Application.Autenticacao;
+using Impa.Modules.Acesso.Application.Usuarios;
 using Impa.Modules.Acesso.Infrastructure.Identity;
 using Impa.Modules.Acesso.Infrastructure.Persistence;
+using Impa.Modules.Acesso.Infrastructure.Sessoes;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Impa.Modules.Acesso.Infrastructure;
 
 public static class DependencyInjection
 {
+    /// <summary>RN-1.2: senhas erradas seguidas até o bloqueio.</summary>
+    public const int MaximoDeSenhasErradas = 5;
+
+    /// <summary>RN-1.2: duração do bloqueio por tentativas.</summary>
+    public static readonly TimeSpan DuracaoDoBloqueio = TimeSpan.FromMinutes(15);
+
     /// <summary>
     /// Registra o módulo Acesso: banco, Identity (usuários, perfis, SignInManager) e a sessão.
     /// O esquema de autenticação por cookie é configurado pelo Host.
@@ -22,6 +31,9 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddSingleton<HashFicticio>();
         services.AddScoped<ISessaoService, SessaoService>();
+        services.AddScoped<IGestaoUsuarios, GestaoUsuarios>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<SessaoTicketStore>(); // sessões no banco; ligado ao cookie pelo Host
 
         return services
             .AddIdentityCore<Usuario>(options =>
@@ -34,6 +46,12 @@ public static class DependencyInjection
                 options.Password.RequireLowercase = false;
                 options.Password.RequiredUniqueChars = 1;
                 options.User.RequireUniqueEmail = false;
+
+                // RN-1.2: 5 senhas erradas seguidas bloqueiam por 15 minutos, para todos os usuários
+                // (os já existentes foram ligados pela migração BloqueioESessoes).
+                options.Lockout.MaxFailedAccessAttempts = MaximoDeSenhasErradas;
+                options.Lockout.DefaultLockoutTimeSpan = DuracaoDoBloqueio;
+                options.Lockout.AllowedForNewUsers = true;
             })
             .AddRoles<Perfil>()
             .AddEntityFrameworkStores<AcessoDbContext>()

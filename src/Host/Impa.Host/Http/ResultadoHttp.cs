@@ -1,11 +1,17 @@
+using System.Text.Json.Serialization;
 using Ardalis.Result;
 using IResultHttp = Microsoft.AspNetCore.Http.IResult;
 using IResultado = Ardalis.Result.IResult;
 
 namespace Impa.Host.Http;
 
-/// <summary>Corpo de erro simples da API: <c>{ "mensagem": "..." }</c>.</summary>
-public sealed record ErroDto(string Mensagem);
+/// <summary>
+/// Corpo de erro simples da API: <c>{ "mensagem": "..." }</c>. <paramref name="Codigo"/> só aparece quando a SPA
+/// precisa distinguir o caso (ex.: <c>"bloqueado"</c> no login); nulo, fica fora do JSON.
+/// </summary>
+public sealed record ErroDto(
+    string Mensagem,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Codigo = null);
 
 /// <summary>Converte o <c>Result</c> dos handlers na resposta HTTP. Um só lugar para o mapeamento de status.</summary>
 public static class ResultadoHttp

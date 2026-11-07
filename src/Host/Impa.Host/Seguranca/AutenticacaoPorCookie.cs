@@ -1,3 +1,5 @@
+using Impa.Modules.Acesso.Infrastructure.Sessoes;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 
 namespace Impa.Host.Seguranca;
@@ -38,6 +40,10 @@ public static class AutenticacaoPorCookie
                 return Task.CompletedTask;
             };
         });
+
+        // Sessões no servidor (acesso.sessoes): o cookie leva só a chave; logout e desativação revogam (RN-1.7).
+        services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
+            .Configure<SessaoTicketStore>((options, store) => options.SessionStore = store);
 
         return services;
     }
