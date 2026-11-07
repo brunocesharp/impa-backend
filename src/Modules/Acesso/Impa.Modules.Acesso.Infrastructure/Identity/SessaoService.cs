@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Impa.Modules.Acesso.Application.Autenticacao;
 using Impa.Modules.Acesso.Contracts;
+using Impa.Modules.Acesso.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 
@@ -12,7 +14,9 @@ public sealed class SessaoService(
     UserManager<Usuario> userManager,
     IPasswordHasher<Usuario> passwordHasher,
     HashFicticio hashFicticio,
-    IHttpContextAccessor httpContextAccessor) : ISessaoService
+    IHttpContextAccessor httpContextAccessor,
+    AcessoDbContext banco,
+    TimeProvider relogio) : ISessaoService
 {
     private HttpContext Contexto => httpContextAccessor.HttpContext
         ?? throw new InvalidOperationException("Sessão usada fora de uma requisição HTTP.");
@@ -27,7 +31,7 @@ public sealed class SessaoService(
             return false;
 
         // Primitiva pura: sempre calcula o hash, sem olhar bloqueio nem se a conta pode entrar.
-        // Essas decisões são do handler (ADR-013, regra 2; bloqueio na story 1.2).
+        // Essas decisões são do handler (ADR-013, regra 2), com ObterSituacaoAsync.
         if (usuario.PasswordHash is null)
         {
             // Conta sem senha: o UserManager recusaria sem PBKDF2 e o tempo separaria essa conta das outras.
@@ -45,10 +49,64 @@ public sealed class SessaoService(
         return Task.CompletedTask;
     }
 
+    public async Task<SituacaoDaConta> ObterSituacaoAsync(Guid usuarioId, CancellationToken ct)
+    {
+        var usuario = await ObterAsync(usuarioId);
+        var bloqueada = usuario.LockoutEnabled && usuario.LockoutEnd > relogio.GetUtcNow();
+        return new SituacaoDaConta(usuario.Ativo, bloqueada);
+    }
+
+    // R2 (revisão 1 da 1-2): a contagem é um UPDATE atômico, não o AccessFailedAsync do Identity (ler, somar,
+    // gravar com ConcurrencyStamp). Senhas erradas em paralelo esperam o lock da linha e o WHERE é reavaliado
+    // sobre a versão nova: depois do 5º erro, as demais já veem a conta bloqueada — sem 500 e sem passar de 5.
+    // O ConcurrencyStamp muda, como numa gravação do Identity, para um UpdateAsync concorrente acusar conflito.
+
+    public async Task<bool> RegistrarFalhaAsync(Guid usuarioId, CancellationToken ct)
+    {
+        var agora = relogio.GetUtcNow();
+        var fimDoBloqueio = agora.Add(DependencyInjection.DuracaoDoBloqueio);
+        var maximo = DependencyInjection.MaximoDeSenhasErradas;
+
+        var bloqueouAgora = await banco.Database.SqlQuery<bool>($"""
+            UPDATE acesso.usuarios SET
+                "AccessFailedCount" = CASE WHEN "LockoutEnabled" AND "AccessFailedCount" + 1 >= {maximo}
+                                           THEN 0 ELSE "AccessFailedCount" + 1 END,
+                "LockoutEnd" = CASE WHEN "LockoutEnabled" AND "AccessFailedCount" + 1 >= {maximo}
+                                    THEN {fimDoBloqueio} ELSE "LockoutEnd" END,
+                "ConcurrencyStamp" = gen_random_uuid()::text
+            WHERE "Id" = {usuarioId}
+              AND NOT ("LockoutEnabled" AND "LockoutEnd" IS NOT NULL AND "LockoutEnd" > {agora})
+            RETURNING ("LockoutEnabled" AND "LockoutEnd" IS NOT NULL AND "LockoutEnd" > {agora}) AS "Value"
+            """).ToListAsync(ct);
+
+        // Nenhuma linha: a conta já estava bloqueada (outra requisição chegou ao 5º erro antes).
+        return bloqueouAgora.Count == 0 || bloqueouAgora[0];
+    }
+
+    public async Task<bool> ZerarFalhasAsync(Guid usuarioId, CancellationToken ct)
+    {
+        var agora = relogio.GetUtcNow();
+
+        var zerou = await banco.Database.SqlQuery<bool>($"""
+            UPDATE acesso.usuarios SET
+                "AccessFailedCount" = 0,
+                "ConcurrencyStamp" = CASE WHEN "AccessFailedCount" = 0
+                                          THEN "ConcurrencyStamp" ELSE gen_random_uuid()::text END
+            WHERE "Id" = {usuarioId}
+              AND NOT ("LockoutEnabled" AND "LockoutEnd" IS NOT NULL AND "LockoutEnd" > {agora})
+            RETURNING TRUE AS "Value"
+            """).ToListAsync(ct);
+
+        return zerou.Count > 0;
+    }
+
+    private async Task<Usuario> ObterAsync(Guid usuarioId) =>
+        await userManager.FindByIdAsync(usuarioId.ToString())
+        ?? throw new InvalidOperationException($"Usuário {usuarioId} não encontrado.");
+
     public async Task AbrirAsync(Guid usuarioId, CancellationToken ct)
     {
-        var usuario = await userManager.FindByIdAsync(usuarioId.ToString())
-            ?? throw new InvalidOperationException($"Usuário {usuarioId} não encontrado ao abrir a sessão.");
+        var usuario = await ObterAsync(usuarioId);
 
         // Persistente: sobrevive a fechar o navegador/PWA, mas o tíquete continua limitado a 12 h sem
         // expiração deslizante (RN-1.3; decisão do usuário em 01/11/2026).

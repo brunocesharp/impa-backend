@@ -1,4 +1,5 @@
 using Impa.Host.Http;
+using ResultStatus = Ardalis.Result.ResultStatus;
 using Impa.Host.Seguranca;
 using Impa.Modules.Acesso.Application.Autenticacao;
 using Impa.Modules.Acesso.Application.Autenticacao.Commands.Entrar;
@@ -13,6 +14,9 @@ public sealed record EntrarRequest(string? Usuario, string? Senha);
 /// <summary><c>/api/auth</c>: login, logout e sessão atual (ADR-006).</summary>
 public static class AutenticacaoEndpoints
 {
+    /// <summary><c>codigo</c> do 401 de login quando a conta está bloqueada por tentativas (RN-1.2).</summary>
+    public const string CodigoBloqueado = "bloqueado";
+
     public static IEndpointRouteBuilder MapAutenticacaoEndpoints(this IEndpointRouteBuilder app)
     {
         var grupo = app.MapGroup("/api/auth").WithTags("Autenticação");
@@ -22,6 +26,7 @@ public static class AutenticacaoEndpoints
             .WithName("Entrar")
             .WithSummary("Entra com usuário e senha e abre a sessão por cookie")
             .Produces(StatusCodes.Status204NoContent)
+            // 401 { mensagem } de credencial inválida, ou { mensagem, codigo: "bloqueado" } (RN-1.2).
             .Produces<ErroDto>(StatusCodes.Status401Unauthorized)
             // Dois 400 com corpos diferentes; a SPA escolhe o tratamento pela forma do corpo:
             // ValidationProblem (errors.Usuario/errors.Senha) e { mensagem } do CSRF (token ausente ou vencido).
@@ -51,6 +56,10 @@ public static class AutenticacaoEndpoints
 
         if (resultado.IsSuccess)
             ProtecaoCsrf.EmitirToken(contexto); // token novo, ligado ao usuário que entrou
+
+        // Bloqueio por tentativas: 401 como os outros erros de login, com código para a SPA (decisão de 06/11/2026).
+        if (resultado.Status == ResultStatus.Unauthorized && resultado.Errors.Contains(EntrarCommand.MensagemBloqueado))
+            return Results.Json(new ErroDto(EntrarCommand.MensagemBloqueado, CodigoBloqueado), statusCode: StatusCodes.Status401Unauthorized);
 
         return resultado.ParaHttp();
     }

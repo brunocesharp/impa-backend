@@ -1,4 +1,5 @@
 using Impa.Modules.Acesso.Infrastructure.Identity;
+using Impa.Modules.Acesso.Infrastructure.Sessoes;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,8 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
 {
     public const string Schema = "acesso";
 
+    public DbSet<Sessao> Sessoes => Set<Sessao>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder); // mapeamento do Identity primeiro; os nomes abaixo vencem
@@ -21,6 +24,19 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
         {
             b.ToTable("usuarios");
             b.Property(u => u.NomeExibicao).HasMaxLength(Usuario.NomeExibicaoMaximo).IsRequired();
+            // Sem HasDefaultValue: com default true, o EF trocaria um false explícito pelo default no insert.
+            // Os usuários já existentes recebem true na migração BloqueioESessoes.
+            b.Property(u => u.Ativo);
+        });
+
+        modelBuilder.Entity<Sessao>(b =>
+        {
+            b.ToTable("sessoes");
+            b.HasKey(s => s.Id);
+            b.Property(s => s.Id).ValueGeneratedNever();
+            b.Property(s => s.Tiquete).IsRequired();
+            b.HasOne<Usuario>().WithMany().HasForeignKey(s => s.UsuarioId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(s => s.UsuarioId); // desativar revoga todas as sessões do usuário
         });
         modelBuilder.Entity<Perfil>().ToTable("perfis");
         modelBuilder.Entity<IdentityUserRole<Guid>>().ToTable("usuarios_perfis");
