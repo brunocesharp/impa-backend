@@ -1,10 +1,12 @@
 using Impa.Modules.Acesso.Application.Autenticacao;
 using Impa.Modules.Acesso.Application.Autenticacao.Commands.TrocarSenha;
 using Impa.Modules.Acesso.Application.Perfis;
+using Impa.Modules.Acesso.Application.Terminais;
 using Impa.Modules.Acesso.Application.Usuarios;
 using Impa.Modules.Acesso.Infrastructure.Identity;
 using Impa.Modules.Acesso.Infrastructure.Persistence;
 using Impa.Modules.Acesso.Infrastructure.Sessoes;
+using Impa.Modules.Acesso.Infrastructure.Terminais;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<ICadastroUsuarios>(s => s.GetRequiredService<GestaoUsuarios>());
         services.AddScoped<ITrocaDeSenha, TrocaDeSenha>();
         services.AddScoped<IGestaoPerfis, GestaoPerfis>();
+        services.AddScoped<ITerminais, GestaoTerminais>();
         services.AddSingleton<CacheDePermissoes>();
         services.AddScoped<IPermissoesDoUsuario, PermissoesDoUsuario>();
         services.TryAddSingleton(TimeProvider.System);

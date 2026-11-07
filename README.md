@@ -66,11 +66,23 @@ por `ISessaoService` (primitivas: buscar usuário, conferir senha, abrir/encerra
   | Ver a configuração (`GET /api/configuracao/empresa`) | `configuracao.ver` |
   | Usuários (`/api/usuarios`) | `usuarios.gerenciar` |
   | Perfis (`/api/perfis`) | `perfis.gerenciar` |
+  | Terminais (`/api/terminais`, exceto `/atual`) | `terminais.gerenciar` |
 
   O teste `PerfisTests` (cenário 1.5) exercita essas permissões com endpoints de exemplo registrados só nos testes
   (`IEndpointsAdicionais`).
 - **Último administrador:** desativar ou trocar o perfil do único administrador ativo é recusado (409, "É preciso manter
   pelo menos um administrador ativo"); a checagem roda sob uma trava (`pg_advisory_xact_lock`).
+
+### Terminais (story 1-6)
+
+- Cada computador ou celular que usa o PDV e o caixa é registrado pelo administrador (`POST /api/terminais` registra o
+  **dispositivo atual**). O token (256 bits aleatórios) vai só no cookie `impa_terminal` (HttpOnly, Secure,
+  SameSite=Strict, 400 dias, renovado pelo `GET /api/terminais/atual`); o banco (`acesso.terminais`) guarda o SHA-256.
+  Limpar os dados do navegador apaga o registro: o administrador revoga o antigo e registra de novo (o nome só é único
+  entre os terminais não revogados).
+- **Proteger um endpoint de PDV ou caixa:** `.RequirePermissao(Permissoes.X).RequireTerminal()` — sem sessão 401, sem
+  terminal válido (sem cookie, cookie inválido ou terminal revogado) 403 `{ mensagem, codigo: "terminal_nao_registrado" }`;
+  sem a permissão da função, 403 padrão (mesmo sem terminal, porque registrar o terminal não resolveria). O terminal é conferido no banco a cada requisição: revogar vale na próxima. As demais funções não exigem terminal.
 
 ### Banco
 

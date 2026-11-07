@@ -45,6 +45,7 @@ if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } caminhoC
 
 builder.Services.AddAutenticacaoPorCookie();
 builder.Services.AddAutorizacaoPorPermissao();
+builder.Services.AddTerminalRegistrado(); // RequireTerminal: PDV e caixa só em terminal registrado (story 1-6)
 builder.Services.AddCamposPorPermissao();
 builder.Services.AddProtecaoCsrf();
 builder.Services.AddLimiteDeLogin(builder.Configuration);
@@ -79,6 +80,7 @@ app.MapAutenticacaoEndpoints();
 app.MapConfiguracaoEndpoints();
 app.MapPerfisEndpoints();
 app.MapUsuariosEndpoints();
+app.MapTerminaisEndpoints();
 app.MapMensageriaEndpoints();
 app.MapVersaoEndpoints();
 foreach (var adicionais in app.Services.GetServices<IEndpointsAdicionais>())
