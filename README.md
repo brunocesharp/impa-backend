@@ -16,13 +16,18 @@ src/
 │   ├── Pipeline/                   # Behaviors do MediatR: LoggingBehavior e ValidationBehavior (ADR-013)
 │   ├── Seguranca/                  # Sessão por cookie (ADR-006), autorização por permissão, proteção CSRF
 │   └── Persistence/                # HostDbContext (só extensões do PostgreSQL) e suas migrações
-├── Shared/Impa.Shared/             # Tipos comuns entre módulos (ainda vazio) — não é módulo de negócio
+├── Shared/Impa.Shared/             # Tipos comuns entre módulos (Documento CPF/CNPJ, mensageria) — não é módulo de negócio
 └── Modules/
     └── Acesso/                     # Identidade e Acesso — schema `acesso`
         ├── Impa.Modules.Acesso.Domain/          # Entidades e regras próprias; não depende de nada externo (ainda vazio)
         ├── Impa.Modules.Acesso.Application/     # Casos de uso (commands/queries MediatR, ADR-013), perfis padrão
         ├── Impa.Modules.Acesso.Infrastructure/  # Identity (Usuario, Perfil, sessão, seed), EF Core (AcessoDbContext, migrações), DI
         └── Impa.Modules.Acesso.Contracts/       # Contrato público: o único projeto que outros módulos podem referenciar
+    └── Pessoas/                    # Clientes e fornecedores (story 3-7) — schema `pessoas`
+        ├── Impa.Modules.Pessoas.Domain/         # Cliente, Fornecedor (RN-14.1, RN-14.2)
+        ├── Impa.Modules.Pessoas.Application/    # Casos de uso, busca (RN-14.3), exclusão só sem histórico (RN-14.4)
+        ├── Impa.Modules.Pessoas.Infrastructure/ # PessoasDbContext, repositórios, migrações, DI
+        └── Impa.Modules.Pessoas.Contracts/      # IPessoasConsultas (PDV, Compras, Financeiro) e a porta IHistoricoDaPessoa
 tests/
 ├── Impa.Architecture.Tests/        # Regras de dependência entre módulos e camadas
 ├── Impa.Modules.Acesso.Tests/      # Unitários do módulo Acesso
@@ -66,6 +71,8 @@ por `ISessaoService` (primitivas: buscar usuário, conferir senha, abrir/encerra
   | Ver a configuração (`GET /api/configuracao/empresa`) | `configuracao.ver` |
   | Usuários (`/api/usuarios`) | `usuarios.gerenciar` |
   | Perfis (`/api/perfis`) | `perfis.gerenciar` |
+  | Clientes (`/api/pessoas/clientes`): consultar / cadastrar e alterar / inativar, reativar e excluir | `clientes.ver` / `clientes.editar` (+ `clientes.ver`) / `clientes.inativar` |
+  | Fornecedores (`/api/pessoas/fornecedores`) | `fornecedores.gerenciar` |
 
   O teste `PerfisTests` (cenário 1.5) exercita essas permissões com endpoints de exemplo registrados só nos testes
   (`IEndpointsAdicionais`).

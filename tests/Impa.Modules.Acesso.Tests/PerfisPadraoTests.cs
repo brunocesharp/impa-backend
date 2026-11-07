@@ -31,9 +31,9 @@ public class PerfisPadraoTests
     }
 
     [Fact]
-    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_gerenciar()
+    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_gerenciar_e_as_duas_da_3_7()
     {
-        Assert.Equal(16, Permissoes.Todas.Count);
+        Assert.Equal(18, Permissoes.Todas.Count);
         Assert.Contains("configuracao.ver", Permissoes.Todas);
         Assert.Contains("liberar.operacoes", Permissoes.Todas);
         Assert.Contains("perfis.gerenciar", Permissoes.Todas);
@@ -50,5 +50,18 @@ public class PerfisPadraoTests
         });
         Assert.True(Permissoes.Existe(Permissoes.CatalogoCustoVer));
         Assert.False(Permissoes.Existe("nao.existe"));
+    }
+
+    [Fact]
+    public void Story_3_7_clientes_inativar_e_fornecedores_gerenciar_so_para_o_administrador()
+    {
+        Assert.Equal("clientes.inativar", Permissoes.ClientesInativar);
+        Assert.Equal("fornecedores.gerenciar", Permissoes.FornecedoresGerenciar);
+        Assert.Contains(Permissoes.ClientesInativar, PerfisPadrao.Administrador.Permissoes);
+        Assert.Contains(Permissoes.FornecedoresGerenciar, PerfisPadrao.Administrador.Permissoes);
+        Assert.DoesNotContain(Permissoes.ClientesInativar, PerfisPadrao.OperadorDeCaixa.Permissoes);
+        Assert.DoesNotContain(Permissoes.FornecedoresGerenciar, PerfisPadrao.OperadorDeCaixa.Permissoes);
+        Assert.Contains(Permissoes.ClientesVer, PerfisPadrao.OperadorDeCaixa.Permissoes);
+        Assert.Contains(Permissoes.ClientesEditar, PerfisPadrao.OperadorDeCaixa.Permissoes);
     }
 }
