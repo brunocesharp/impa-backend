@@ -26,9 +26,16 @@ public sealed class ClienteApi(HttpClient http)
 
     public async Task<HttpResponseMessage> GetAsync(string url) => Capturar(await http.GetAsync(url));
 
-    public async Task<HttpResponseMessage> PostAsync(string url, object? corpo = null, bool enviarXsrf = true)
+    public Task<HttpResponseMessage> PostAsync(string url, object? corpo = null, bool enviarXsrf = true) =>
+        EnviarAsync(HttpMethod.Post, url, corpo, enviarXsrf);
+
+    public Task<HttpResponseMessage> PutAsync(string url, object? corpo = null) => EnviarAsync(HttpMethod.Put, url, corpo);
+
+    public Task<HttpResponseMessage> DeleteAsync(string url) => EnviarAsync(HttpMethod.Delete, url, null);
+
+    public async Task<HttpResponseMessage> EnviarAsync(HttpMethod metodo, string url, object? corpo, bool enviarXsrf = true)
     {
-        using var requisicao = new HttpRequestMessage(HttpMethod.Post, url)
+        using var requisicao = new HttpRequestMessage(metodo, url)
         {
             Content = corpo is null ? null : JsonContent.Create(corpo),
         };

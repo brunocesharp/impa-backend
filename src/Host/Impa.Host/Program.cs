@@ -40,6 +40,7 @@ if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } caminhoC
 
 builder.Services.AddAutenticacaoPorCookie();
 builder.Services.AddAutorizacaoPorPermissao();
+builder.Services.AddCamposPorPermissao();
 builder.Services.AddProtecaoCsrf();
 builder.Services.AddLimiteDeLogin(builder.Configuration);
 
@@ -63,14 +64,18 @@ app.Services.PrepararAcesso();
 app.UseForwardedHeaders();
 app.UseLimiteDeLogin(); // depois do X-Forwarded-For: o limite é por IP do cliente
 app.UseAuthentication();
+app.UsePermissoesDaSessao(); // perfil e permissões atuais, do banco (story 1.3)
 app.UseProtecaoCsrf();
 app.UseAuthorization();
 
 app.MapHealthChecks("/api/health").AllowAnonymous();
 app.MapAutenticacaoEndpoints();
 app.MapConfiguracaoEndpoints();
+app.MapPerfisEndpoints();
 app.MapUsuariosEndpoints();
 app.MapVersaoEndpoints();
+foreach (var adicionais in app.Services.GetServices<IEndpointsAdicionais>())
+    adicionais.Mapear(app);
 
 app.Run();
 

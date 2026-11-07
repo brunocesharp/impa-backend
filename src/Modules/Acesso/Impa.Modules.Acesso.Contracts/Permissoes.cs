@@ -1,8 +1,12 @@
 namespace Impa.Modules.Acesso.Contracts;
 
+/// <summary>Uma permissão do catálogo: código (claim <see cref="Permissoes.ClaimType"/>), grupo e texto da tela.</summary>
+public sealed record PermissaoInfo(string Codigo, string Grupo, string Descricao);
+
 /// <summary>
-/// Permissões do sistema, guardadas como claims <see cref="ClaimType"/> nos perfis.
-/// Lista fixa nesta fase; a gestão de perfis pela tela vem na story 1.3.
+/// Catálogo de permissões do sistema (RN-1.4: permissões por funcionalidade). O catálogo fica no código;
+/// quais permissões cada perfil tem fica no banco (claims <see cref="ClaimType"/> do perfil, story 1.3).
+/// Permissão nova entra aqui e o seed a dá ao Administrador na próxima subida.
 /// </summary>
 public static class Permissoes
 {
@@ -11,6 +15,7 @@ public static class Permissoes
     public const string ConfiguracaoVer = "configuracao.ver";
     public const string ConfiguracaoFiscal = "configuracao.fiscal";
     public const string UsuariosGerenciar = "usuarios.gerenciar";
+    public const string PerfisGerenciar = "perfis.gerenciar";
     public const string CatalogoVer = "catalogo.ver";
     public const string CatalogoCustoVer = "catalogo.custo.ver";
     public const string CatalogoEditar = "catalogo.editar";
@@ -24,11 +29,40 @@ public static class Permissoes
     public const string ImportacaoExecutar = "importacao.executar";
     public const string LiberarOperacoes = "liberar.operacoes";
 
-    public static IReadOnlyList<string> Todas { get; } =
+    private const string GrupoVendas = "Vendas e caixa";
+    private const string GrupoCatalogo = "Catálogo";
+    private const string GrupoClientes = "Clientes";
+    private const string GrupoFinanceiro = "Financeiro";
+    private const string GrupoAdministracao = "Administração";
+
+    /// <summary>Catálogo na ordem da tela (agrupado).</summary>
+    public static IReadOnlyList<PermissaoInfo> Catalogo { get; } =
     [
-        ConfiguracaoVer, ConfiguracaoFiscal, UsuariosGerenciar,
-        CatalogoVer, CatalogoCustoVer, CatalogoEditar,
-        PdvVender, CaixaOperar, CaixaFechar, CaixaConsultar,
-        ClientesVer, ClientesEditar, FinanceiroVer, ImportacaoExecutar, LiberarOperacoes,
+        new(PdvVender, GrupoVendas, "Vender no PDV"),
+        new(CaixaOperar, GrupoVendas, "Abrir caixa, sangria e suprimento"),
+        new(CaixaFechar, GrupoVendas, "Fechar caixa"),
+        new(CaixaConsultar, GrupoVendas, "Consultar caixas"),
+        new(LiberarOperacoes, GrupoVendas, "Liberar operações"),
+
+        new(CatalogoVer, GrupoCatalogo, "Consultar itens"),
+        new(CatalogoCustoVer, GrupoCatalogo, "Ver custo dos itens"),
+        new(CatalogoEditar, GrupoCatalogo, "Cadastrar e alterar itens"),
+        new(ImportacaoExecutar, GrupoCatalogo, "Importar planilhas"),
+
+        new(ClientesVer, GrupoClientes, "Consultar clientes"),
+        new(ClientesEditar, GrupoClientes, "Cadastrar e alterar clientes"),
+
+        new(FinanceiroVer, GrupoFinanceiro, "Contas a pagar e financeiro"),
+
+        new(ConfiguracaoVer, GrupoAdministracao, "Ver a configuração"),
+        new(ConfiguracaoFiscal, GrupoAdministracao, "Alterar a configuração fiscal"),
+        new(UsuariosGerenciar, GrupoAdministracao, "Gerenciar usuários"),
+        new(PerfisGerenciar, GrupoAdministracao, "Gerenciar perfis e permissões"),
     ];
+
+    public static IReadOnlyList<string> Todas { get; } = Catalogo.Select(p => p.Codigo).ToArray();
+
+    private static readonly HashSet<string> Codigos = new(Todas, StringComparer.Ordinal);
+
+    public static bool Existe(string codigo) => Codigos.Contains(codigo);
 }

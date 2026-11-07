@@ -65,22 +65,32 @@ public class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             services.AddSingleton<TimeProvider>(Clock);
             services.RemoveAll<IPasswordHasher<Usuario>>();
             services.AddSingleton<IPasswordHasher<Usuario>>(Hasher);
+            services.AddSingleton<Impa.Host.Endpoints.IEndpointsAdicionais, EndpointsDeExemplo>();
         });
     }
 
-    /// <summary>Cria, se ainda não existir, um usuário com o perfil indicado (ex.: a Ana do cenário 1.1).</summary>
-    public async Task CriarUsuarioAsync(string usuario, string senha, string nome, string perfil)
+    /// <summary>Cria, se ainda não existir, um usuário com o perfil indicado (ex.: a Ana do cenário 1.1). Devolve o id.</summary>
+    public async Task<Guid> CriarUsuarioAsync(string usuario, string senha, string nome, string perfil)
     {
         _ = CriarCliente(); // garante o Host no ar (migrações e seed)
         await using var escopo = Services.CreateAsyncScope();
         var usuarios = escopo.ServiceProvider.GetRequiredService<UserManager<Usuario>>();
-        if (await usuarios.FindByNameAsync(usuario) is not null)
-            return;
+        if (await usuarios.FindByNameAsync(usuario) is { } existente)
+            return existente.Id;
 
         var novo = new Usuario { UserName = usuario, NomeExibicao = nome };
         var criado = await usuarios.CreateAsync(novo, senha);
         Assert.True(criado.Succeeded, string.Join("; ", criado.Errors.Select(e => e.Description)));
         Assert.True((await usuarios.AddToRoleAsync(novo, perfil)).Succeeded);
+        return novo.Id;
+    }
+
+    /// <summary>Id do usuário com esse login.</summary>
+    public async Task<Guid> IdDoUsuarioAsync(string usuario)
+    {
+        _ = CriarCliente();
+        await using var escopo = Services.CreateAsyncScope();
+        return (await escopo.ServiceProvider.GetRequiredService<UserManager<Usuario>>().FindByNameAsync(usuario))!.Id;
     }
 
     /// <summary>

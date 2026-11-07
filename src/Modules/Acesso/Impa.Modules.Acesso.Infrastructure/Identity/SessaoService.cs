@@ -16,7 +16,8 @@ public sealed class SessaoService(
     HashFicticio hashFicticio,
     IHttpContextAccessor httpContextAccessor,
     AcessoDbContext banco,
-    TimeProvider relogio) : ISessaoService
+    TimeProvider relogio,
+    IPermissoesDoUsuario permissoesDoUsuario) : ISessaoService
 {
     private HttpContext Contexto => httpContextAccessor.HttpContext
         ?? throw new InvalidOperationException("Sessão usada fora de uma requisição HTTP.");
@@ -133,9 +134,10 @@ public sealed class SessaoService(
         if (usuario is null)
             return null;
 
-        var permissoes = principal.FindAll(Permissoes.ClaimType).Select(c => c.Value).Distinct().Order().ToList();
-        var perfil = principal.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        // Story 1.3: perfil e permissões atuais, do banco — não os gravados no tíquete no momento do login.
+        var atuais = await permissoesDoUsuario.ObterAsync(usuario.Id, ct);
+        var permissoes = atuais.Permissoes.Order(StringComparer.Ordinal).ToList();
 
-        return new SessaoDto(usuario.UserName!, usuario.NomeExibicao, perfil, permissoes);
+        return new SessaoDto(usuario.UserName!, usuario.NomeExibicao, atuais.Perfil, permissoes);
     }
 }

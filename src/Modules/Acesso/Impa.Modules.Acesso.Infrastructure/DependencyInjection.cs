@@ -1,4 +1,5 @@
 using Impa.Modules.Acesso.Application.Autenticacao;
+using Impa.Modules.Acesso.Application.Perfis;
 using Impa.Modules.Acesso.Application.Usuarios;
 using Impa.Modules.Acesso.Infrastructure.Identity;
 using Impa.Modules.Acesso.Infrastructure.Persistence;
@@ -32,6 +33,9 @@ public static class DependencyInjection
         services.AddSingleton<HashFicticio>();
         services.AddScoped<ISessaoService, SessaoService>();
         services.AddScoped<IGestaoUsuarios, GestaoUsuarios>();
+        services.AddScoped<IGestaoPerfis, GestaoPerfis>();
+        services.AddSingleton<CacheDePermissoes>();
+        services.AddScoped<IPermissoesDoUsuario, PermissoesDoUsuario>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<SessaoTicketStore>(); // sessões no banco; ligado ao cookie pelo Host
 
