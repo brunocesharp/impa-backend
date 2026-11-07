@@ -1,5 +1,6 @@
 using FluentValidation;
 using Impa.Host.Endpoints;
+using Impa.Host.Messaging;
 using Impa.Host.Persistence;
 using Impa.Host.Pipeline;
 using Impa.Host.Seguranca;
@@ -30,6 +31,10 @@ builder.Services.AddMediatR(cfg =>
     cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
 });
 builder.Services.AddValidatorsFromAssembly(AcessoApplication.Assembly);
+
+// Integration events (ADR-011): despachante dos Outbox, espera por chave e reprocessamento.
+// Cada módulo registra o próprio Outbox e os próprios handlers.
+builder.Services.AddDespachanteDeEventos(builder.Configuration);
 
 // Segurança
 // Chaves que criptografam o cookie de sessão e o antiforgery. No container ficam num volume
@@ -70,6 +75,7 @@ app.MapHealthChecks("/api/health").AllowAnonymous();
 app.MapAutenticacaoEndpoints();
 app.MapConfiguracaoEndpoints();
 app.MapUsuariosEndpoints();
+app.MapMensageriaEndpoints();
 app.MapVersaoEndpoints();
 
 app.Run();
