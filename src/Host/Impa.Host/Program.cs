@@ -7,6 +7,8 @@ using Impa.Host.Seguranca;
 using Impa.Host.Tarefas;
 using Impa.Modules.Acesso.Application;
 using Impa.Modules.Acesso.Infrastructure;
+using Impa.Modules.Configuracao.Application;
+using Impa.Modules.Configuracao.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -22,16 +24,19 @@ builder.Services.AddDbContext<HostDbContext>(options => options.UseNpgsql(
 
 // Módulos
 builder.Services.AddAcessoModule(connectionString);
+builder.Services.AddConfiguracaoModule(connectionString);
 
 // Casos de uso: handlers (MediatR) e validators (FluentValidation) de cada módulo
 builder.Services.AddMediatR(cfg =>
 {
     cfg.LicenseKey = builder.Configuration["MediatR:LicenseKey"];
     cfg.RegisterServicesFromAssembly(AcessoApplication.Assembly);
+    cfg.RegisterServicesFromAssembly(ConfiguracaoApplication.Assembly);
     cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));
     cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
 });
 builder.Services.AddValidatorsFromAssembly(AcessoApplication.Assembly);
+builder.Services.AddValidatorsFromAssembly(ConfiguracaoApplication.Assembly);
 
 // Integration events (ADR-011): despachante dos Outbox, espera por chave e reprocessamento.
 // Cada módulo registra o próprio Outbox e os próprios handlers.
@@ -86,6 +91,7 @@ app.MapPerfisEndpoints();
 app.MapUsuariosEndpoints();
 app.MapTerminaisEndpoints();
 app.MapMensageriaEndpoints();
+app.MapNotificacoesEndpoints();
 app.MapVersaoEndpoints();
 foreach (var adicionais in app.Services.GetServices<IEndpointsAdicionais>())
     adicionais.Mapear(app);

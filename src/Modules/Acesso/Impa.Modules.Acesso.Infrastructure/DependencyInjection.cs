@@ -3,6 +3,7 @@ using Impa.Modules.Acesso.Application.Autenticacao.Commands.TrocarSenha;
 using Impa.Modules.Acesso.Application.Perfis;
 using Impa.Modules.Acesso.Application.Terminais;
 using Impa.Modules.Acesso.Application.Usuarios;
+using Impa.Modules.Acesso.Contracts;
 using Impa.Modules.Acesso.Infrastructure.Identity;
 using Impa.Modules.Acesso.Infrastructure.Persistence;
 using Impa.Modules.Acesso.Infrastructure.Sessoes;
@@ -43,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<ITerminais, GestaoTerminais>();
         services.AddSingleton<CacheDePermissoes>();
         services.AddScoped<IPermissoesDoUsuario, PermissoesDoUsuario>();
+        services.AddScoped<IUsuariosComPermissao, UsuariosComPermissao>(); // contrato público (story 4.2)
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<SessaoTicketStore>(); // sessões no banco; ligado ao cookie pelo Host
 
