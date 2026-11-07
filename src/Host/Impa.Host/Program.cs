@@ -4,10 +4,13 @@ using Impa.Host.Messaging;
 using Impa.Host.Persistence;
 using Impa.Host.Pipeline;
 using Impa.Host.Seguranca;
+using Impa.Host.Tarefas;
 using Impa.Modules.Acesso.Application;
 using Impa.Modules.Acesso.Infrastructure;
 using Impa.Modules.Pessoas.Application;
 using Impa.Modules.Pessoas.Infrastructure;
+using Impa.Modules.Configuracao.Application;
+using Impa.Modules.Configuracao.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +27,7 @@ builder.Services.AddDbContext<HostDbContext>(options => options.UseNpgsql(
 // Módulos
 builder.Services.AddAcessoModule(connectionString);
 builder.Services.AddPessoasModule(connectionString);
+builder.Services.AddConfiguracaoModule(connectionString);
 
 // Casos de uso: handlers (MediatR) e validators (FluentValidation) de cada módulo
 builder.Services.AddMediatR(cfg =>
@@ -31,15 +35,20 @@ builder.Services.AddMediatR(cfg =>
     cfg.LicenseKey = builder.Configuration["MediatR:LicenseKey"];
     cfg.RegisterServicesFromAssembly(AcessoApplication.Assembly);
     cfg.RegisterServicesFromAssembly(PessoasApplication.Assembly);
+    cfg.RegisterServicesFromAssembly(ConfiguracaoApplication.Assembly);
     cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));
     cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
 });
 builder.Services.AddValidatorsFromAssembly(AcessoApplication.Assembly);
 builder.Services.AddValidatorsFromAssembly(PessoasApplication.Assembly);
+builder.Services.AddValidatorsFromAssembly(ConfiguracaoApplication.Assembly);
 
 // Integration events (ADR-011): despachante dos Outbox, espera por chave e reprocessamento.
 // Cada módulo registra o próprio Outbox e os próprios handlers.
 builder.Services.AddDespachanteDeEventos(builder.Configuration);
+
+// Tarefas em segundo plano
+builder.Services.AddHostedService<LimpezaDeSessoesTarefa>(); // sessões antigas (story 1-11)
 
 // Segurança
 // Chaves que criptografam o cookie de sessão e o antiforgery. No container ficam num volume
@@ -50,6 +59,7 @@ if (builder.Configuration["DataProtection:KeysPath"] is { Length: > 0 } caminhoC
 
 builder.Services.AddAutenticacaoPorCookie();
 builder.Services.AddAutorizacaoPorPermissao();
+builder.Services.AddTerminalRegistrado(); // RequireTerminal: PDV e caixa só em terminal registrado (story 1-6)
 builder.Services.AddCamposPorPermissao();
 builder.Services.AddProtecaoCsrf();
 builder.Services.AddLimiteDeLogin(builder.Configuration);
@@ -85,7 +95,9 @@ app.MapConfiguracaoEndpoints();
 app.MapPerfisEndpoints();
 app.MapUsuariosEndpoints();
 app.MapPessoasEndpoints();
+app.MapTerminaisEndpoints();
 app.MapMensageriaEndpoints();
+app.MapNotificacoesEndpoints();
 app.MapVersaoEndpoints();
 foreach (var adicionais in app.Services.GetServices<IEndpointsAdicionais>())
     adicionais.Mapear(app);

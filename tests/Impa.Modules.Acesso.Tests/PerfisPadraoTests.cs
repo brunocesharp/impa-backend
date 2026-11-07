@@ -31,13 +31,21 @@ public class PerfisPadraoTests
     }
 
     [Fact]
-    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_gerenciar_e_as_duas_da_3_7()
+    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_terminais_notificacoes_e_as_duas_da_3_7()
     {
-        Assert.Equal(18, Permissoes.Todas.Count);
+        Assert.Equal(20, Permissoes.Todas.Count);
+        Assert.Contains("notificacoes.receber", Permissoes.Todas); // story 4.2
+        Assert.Contains("clientes.inativar", Permissoes.Todas); // story 3-7
+        Assert.Contains("fornecedores.gerenciar", Permissoes.Todas); // story 3-7
         Assert.Contains("configuracao.ver", Permissoes.Todas);
         Assert.Contains("liberar.operacoes", Permissoes.Todas);
         Assert.Contains("perfis.gerenciar", Permissoes.Todas);
+        Assert.Contains("terminais.gerenciar", Permissoes.Todas); // story 1-6
     }
+
+    [Fact]
+    public void Operador_de_caixa_nao_gerencia_terminais() =>
+        Assert.DoesNotContain(Permissoes.TerminaisGerenciar, PerfisPadrao.OperadorDeCaixa.Permissoes);
 
     [Fact]
     public void Cada_permissao_do_catalogo_tem_grupo_e_descricao_e_codigo_unico()

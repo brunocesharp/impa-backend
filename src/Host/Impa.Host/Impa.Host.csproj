@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Modules\Acesso\Impa.Modules.Acesso.Infrastructure\Impa.Modules.Acesso.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Configuracao\Impa.Modules.Configuracao.Infrastructure\Impa.Modules.Configuracao.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Shared\Impa.Shared\Impa.Shared.csproj" />
     <ProjectReference Include="..\..\Modules\Pessoas\Impa.Modules.Pessoas.Infrastructure\Impa.Modules.Pessoas.Infrastructure.csproj" />
   </ItemGroup>

@@ -16,6 +16,7 @@ public static class Permissoes
     public const string ConfiguracaoFiscal = "configuracao.fiscal";
     public const string UsuariosGerenciar = "usuarios.gerenciar";
     public const string PerfisGerenciar = "perfis.gerenciar";
+    public const string TerminaisGerenciar = "terminais.gerenciar";
     public const string CatalogoVer = "catalogo.ver";
     public const string CatalogoCustoVer = "catalogo.custo.ver";
     public const string CatalogoEditar = "catalogo.editar";
@@ -30,6 +31,9 @@ public static class Permissoes
     public const string FinanceiroVer = "financeiro.ver";
     public const string ImportacaoExecutar = "importacao.executar";
     public const string LiberarOperacoes = "liberar.operacoes";
+
+    /// <summary>RN-2.3: recebe as notificações dentro do sistema (story 4.2).</summary>
+    public const string NotificacoesReceber = "notificacoes.receber";
 
     private const string GrupoVendas = "Vendas e caixa";
     private const string GrupoCatalogo = "Catálogo";
@@ -64,6 +68,8 @@ public static class Permissoes
         new(ConfiguracaoFiscal, GrupoAdministracao, "Alterar a configuração fiscal"),
         new(UsuariosGerenciar, GrupoAdministracao, "Gerenciar usuários"),
         new(PerfisGerenciar, GrupoAdministracao, "Gerenciar perfis e permissões"),
+        new(TerminaisGerenciar, GrupoAdministracao, "Registrar e revogar terminais"),
+        new(NotificacoesReceber, GrupoAdministracao, "Receber notificações"),
     ];
 
     public static IReadOnlyList<string> Todas { get; } = Catalogo.Select(p => p.Codigo).ToArray();
