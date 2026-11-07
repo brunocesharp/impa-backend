@@ -4,6 +4,7 @@ using Impa.Host.Messaging;
 using Impa.Host.Persistence;
 using Impa.Host.Pipeline;
 using Impa.Host.Seguranca;
+using Impa.Host.Tarefas;
 using Impa.Modules.Acesso.Application;
 using Impa.Modules.Acesso.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
@@ -35,6 +36,9 @@ builder.Services.AddValidatorsFromAssembly(AcessoApplication.Assembly);
 // Integration events (ADR-011): despachante dos Outbox, espera por chave e reprocessamento.
 // Cada módulo registra o próprio Outbox e os próprios handlers.
 builder.Services.AddDespachanteDeEventos(builder.Configuration);
+
+// Tarefas em segundo plano
+builder.Services.AddHostedService<LimpezaDeSessoesTarefa>(); // sessões antigas (story 1-11)
 
 // Segurança
 // Chaves que criptografam o cookie de sessão e o antiforgery. No container ficam num volume
