@@ -38,7 +38,11 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
             b.HasOne<Usuario>().WithMany().HasForeignKey(s => s.UsuarioId).OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(s => s.UsuarioId); // desativar revoga todas as sessões do usuário
         });
-        modelBuilder.Entity<Perfil>().ToTable("perfis");
+        modelBuilder.Entity<Perfil>(b =>
+        {
+            b.ToTable("perfis");
+            b.Property(p => p.Protegido); // sem default: os perfis existentes recebem false na migração
+        });
         modelBuilder.Entity<IdentityUserRole<Guid>>().ToTable("usuarios_perfis");
         modelBuilder.Entity<IdentityRoleClaim<Guid>>().ToTable("perfis_permissoes");
         modelBuilder.Entity<IdentityUserClaim<Guid>>().ToTable("usuarios_claims");

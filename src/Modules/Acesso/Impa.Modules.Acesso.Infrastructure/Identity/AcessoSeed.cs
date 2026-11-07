@@ -11,7 +11,7 @@ namespace Impa.Modules.Acesso.Infrastructure.Identity;
 public sealed record AdministradorInicial(string Usuario, string Senha, string Nome);
 
 /// <summary>
-/// Seed da inicialização, idempotente: garante os perfis padrão com as permissões da lista fixa
+/// Seed da inicialização, idempotente: garante os perfis padrão (RN-1.5, RN-1.6)
 /// e cria o primeiro administrador se ainda não houver nenhum.
 /// </summary>
 public static class AcessoSeed
@@ -23,7 +23,8 @@ public static class AcessoSeed
         var usuarios = servicos.GetRequiredService<UserManager<Usuario>>();
         var log = servicos.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AcessoSeed));
 
-        foreach (var padrao in PerfisPadrao.Todos)
+        var instalacao = !perfis.Roles.Any();
+        foreach (var padrao in PerfisPadrao.Todos.Where(p => p.Protegido || instalacao))
             await GarantirPerfilAsync(perfis, padrao);
 
         if ((await usuarios.GetUsersInRoleAsync(PerfisPadrao.Administrador.Nome)).Count > 0)
@@ -66,16 +67,30 @@ public static class AcessoSeed
         Verificar(await usuarios.AddToRoleAsync(usuario, PerfisPadrao.Administrador.Nome), "dar o perfil Administrador");
     }
 
+    /// <summary>
+    /// Story 1.3: as permissões dos perfis vivem no banco. Na instalação (nenhum perfil) os perfis padrão são criados
+    /// com a lista da RN-1.5; depois disso, os não protegidos são do administrador (alterar, renomear, excluir) e o
+    /// seed não os toca nem os recria. O Administrador
+    /// (protegido, RN-1.6) fica sempre com exatamente o catálogo — permissão nova chega a ele na subida.
+    /// </summary>
     private static async Task GarantirPerfilAsync(RoleManager<Perfil> perfis, PerfilPadrao padrao)
     {
         var perfil = await perfis.FindByNameAsync(padrao.Nome);
+        var novo = perfil is null;
         if (perfil is null)
         {
-            perfil = new Perfil(padrao.Nome);
+            perfil = new Perfil(padrao.Nome, padrao.Protegido);
             Verificar(await perfis.CreateAsync(perfil), $"criar o perfil {padrao.Nome}");
         }
+        else if (padrao.Protegido && !perfil.Protegido)
+        {
+            perfil.Proteger();
+            Verificar(await perfis.UpdateAsync(perfil), $"proteger o perfil {padrao.Nome}");
+        }
 
-        // Lista fixa até a story 1.3: o perfil fica exatamente com as permissões do código.
+        if (!novo && !padrao.Protegido)
+            return;
+
         var atuais = (await perfis.GetClaimsAsync(perfil)).Where(c => c.Type == Permissoes.ClaimType).ToList();
 
         foreach (var sobrando in atuais.Where(c => !padrao.Permissoes.Contains(c.Value)))

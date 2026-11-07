@@ -44,6 +44,34 @@ deploy/                             # Dockerfile, compose de homologação, Cadd
 herdam de tipos do ASP.NET Core Identity, e o Domain só pode referenciar `Impa.Shared`. A Application fala com eles
 por `ISessaoService` (primitivas: buscar usuário, conferir senha, abrir/encerrar sessão), e a decisão do login fica no handler.
 
+### Permissões (story 1.3)
+
+- **Catálogo no código, perfis no banco.** `Permissoes.Catalogo` (`Impa.Modules.Acesso.Contracts`) lista cada permissão
+  com grupo e descrição (é o que a tela de perfis mostra). Cada perfil (role do Identity) guarda as suas como claims
+  `permissao` em `acesso.perfis_permissoes`; cada usuário tem um perfil. Permissão nova entra no catálogo e o seed a dá ao
+  **Administrador** (perfil protegido: não pode ser alterado nem excluído). Os demais perfis são do administrador da loja.
+- **Proteger um endpoint:** `.RequirePermissao(Permissoes.X)` — sem sessão 401, sem a permissão 403. A verificação usa o
+  perfil **atual** do usuário no banco (cache de 30 s, invalidado quando um perfil ou o perfil de um usuário muda), não o
+  que estava no tíquete do login. Uma instância da API só: com várias, a invalidação teria de ser distribuída.
+- **Campo que depende de permissão:** marque a propriedade do DTO com `[property: ExigePermissao(Permissoes.X)]`; sem a
+  permissão o campo é **omitido do JSON** (não vem `null`). Ex.: o custo dos itens.
+- **Convenção por funcionalidade** — os endpoints existentes e futuros usam:
+
+  | Funcionalidade | Permissão |
+  |----------------|-----------|
+  | Custo dos itens (campo nos DTOs de item, épico 3) | `catalogo.custo.ver` (`ExigePermissao`) |
+  | Contas a pagar e financeiro | `financeiro.ver` |
+  | Importação de planilhas | `importacao.executar` |
+  | Alterar a configuração fiscal | `configuracao.fiscal` |
+  | Ver a configuração (`GET /api/configuracao/empresa`) | `configuracao.ver` |
+  | Usuários (`/api/usuarios`) | `usuarios.gerenciar` |
+  | Perfis (`/api/perfis`) | `perfis.gerenciar` |
+
+  O teste `PerfisTests` (cenário 1.5) exercita essas permissões com endpoints de exemplo registrados só nos testes
+  (`IEndpointsAdicionais`).
+- **Último administrador:** desativar ou trocar o perfil do único administrador ativo é recusado (409, "É preciso manter
+  pelo menos um administrador ativo"); a checagem roda sob uma trava (`pg_advisory_xact_lock`).
+
 ### Banco
 
 - Um schema por módulo (`acesso`, ...), cada um com a própria tabela `__EFMigrationsHistory`.
