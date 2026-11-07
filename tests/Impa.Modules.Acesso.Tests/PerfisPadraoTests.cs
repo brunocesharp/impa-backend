@@ -31,9 +31,10 @@ public class PerfisPadraoTests
     }
 
     [Fact]
-    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_gerenciar()
+    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_gerenciar_e_notificacoes_receber()
     {
-        Assert.Equal(16, Permissoes.Todas.Count);
+        Assert.Equal(17, Permissoes.Todas.Count);
+        Assert.Contains("notificacoes.receber", Permissoes.Todas); // story 4.2
         Assert.Contains("configuracao.ver", Permissoes.Todas);
         Assert.Contains("liberar.operacoes", Permissoes.Todas);
         Assert.Contains("perfis.gerenciar", Permissoes.Todas);
