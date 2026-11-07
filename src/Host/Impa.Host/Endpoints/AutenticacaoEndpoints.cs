@@ -4,12 +4,18 @@ using Impa.Host.Seguranca;
 using Impa.Modules.Acesso.Application.Autenticacao;
 using Impa.Modules.Acesso.Application.Autenticacao.Commands.Entrar;
 using Impa.Modules.Acesso.Application.Autenticacao.Commands.Sair;
+using Impa.Modules.Acesso.Application.Autenticacao.Commands.TrocarSenha;
 using Impa.Modules.Acesso.Application.Autenticacao.Queries.ObterSessaoAtual;
 using MediatR;
 
 namespace Impa.Host.Endpoints;
 
 public sealed record EntrarRequest(string? Usuario, string? Senha);
+
+public sealed record TrocarSenhaRequest(string? SenhaAtual, string? NovaSenha)
+{
+    public override string ToString() => $"{nameof(TrocarSenhaRequest)} {{ SenhaAtual = ***, NovaSenha = *** }}";
+}
 
 /// <summary><c>/api/auth</c>: login, logout e sessão atual (ADR-006).</summary>
 public static class AutenticacaoEndpoints
@@ -42,15 +48,33 @@ public static class AutenticacaoEndpoints
             .Produces(StatusCodes.Status204NoContent)
             // Sessão já vencida: o token XSRF era da identidade anterior → 400 { mensagem } do CSRF.
             .Produces<ErroDto>(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces(StatusCodes.Status401Unauthorized)
+            .LiberarNaTrocaDeSenha(); // com a senha provisória, ainda dá para sair
 
         grupo.MapGet("/me", ObterSessaoAtual)
             .WithName("ObterSessaoAtual")
-            .WithSummary("Usuário da sessão, com perfil e permissões")
+            .WithSummary("Usuário da sessão, com perfil, permissões e se a troca de senha é obrigatória")
             .Produces<SessaoDto>()
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces(StatusCodes.Status401Unauthorized)
+            .LiberarNaTrocaDeSenha();
+
+        grupo.MapPost("/trocar-senha", TrocarSenha)
+            .WithName("TrocarSenha")
+            .WithSummary("O usuário da sessão troca a própria senha (obrigatório com a senha provisória, RN-1.8)")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesValidationProblem()
+            .Produces(StatusCodes.Status401Unauthorized)
+            .LiberarNaTrocaDeSenha();
 
         return app;
+    }
+
+    private static async Task<IResult> TrocarSenha(TrocarSenhaRequest request, ISender mediator, HttpContext contexto, CancellationToken ct)
+    {
+        var resultado = await mediator.Send(new TrocarSenhaCommand(request.SenhaAtual ?? string.Empty, request.NovaSenha ?? string.Empty), ct);
+        if (resultado.IsSuccess)
+            ProtecaoCsrf.EmitirToken(contexto); // a sessão foi renovada: token ligado à identidade nova
+        return resultado.ParaHttp();
     }
 
     private static async Task<IResult> Entrar(EntrarRequest request, ISender mediator, HttpContext contexto, CancellationToken ct)

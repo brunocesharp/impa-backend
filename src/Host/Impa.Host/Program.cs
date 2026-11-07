@@ -71,6 +71,7 @@ app.UseLimiteDeLogin(); // depois do X-Forwarded-For: o limite é por IP do clie
 app.UseAuthentication();
 app.UsePermissoesDaSessao(); // perfil e permissões atuais, do banco (story 1.3)
 app.UseProtecaoCsrf();
+app.UseTrocaDeSenhaObrigatoria(); // senha provisória: só a troca de senha (story 1.4, RN-1.8)
 app.UseAuthorization();
 
 app.MapHealthChecks("/api/health").AllowAnonymous();

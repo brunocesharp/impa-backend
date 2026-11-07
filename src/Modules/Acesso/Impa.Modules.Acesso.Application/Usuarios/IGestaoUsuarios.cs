@@ -6,6 +6,10 @@ public static class MensagensUsuarios
 {
     /// <summary>Cenário 1.6 / RN-1.6.</summary>
     public const string UltimoAdministrador = "É preciso manter pelo menos um administrador ativo";
+
+    public const string NaoEncontrado = "Usuário não encontrado";
+
+    public const string LoginEmUso = "Já existe um usuário com esse login";
 }
 
 /// <summary>Primitivas de gestão de usuários (implementadas na Infrastructure com o Identity).</summary>

@@ -1,7 +1,10 @@
 namespace Impa.Modules.Acesso.Application.Autenticacao;
 
-/// <summary>Perfil do usuário e as permissões dele, lidos do banco (story 1.3).</summary>
-public sealed record PermissoesCarregadas(string Perfil, IReadOnlySet<string> Permissoes)
+/// <summary>
+/// Perfil do usuário e as permissões dele, lidos do banco (story 1.3). <paramref name="TrocaDeSenhaObrigatoria"/>:
+/// o usuário está com a senha provisória e só pode trocá-la (RN-1.8, story 1.4).
+/// </summary>
+public sealed record PermissoesCarregadas(string Perfil, IReadOnlySet<string> Permissoes, bool TrocaDeSenhaObrigatoria = false)
 {
     public static PermissoesCarregadas Nenhuma { get; } = new(string.Empty, new HashSet<string>());
 

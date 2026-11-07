@@ -12,12 +12,26 @@ public sealed class Usuario : IdentityUser<Guid>
 
     public string NomeExibicao { get; set; } = string.Empty;
 
-    /// <summary>Usuário desativado não entra (RN-1.7). Só muda por <see cref="Desativar"/>.</summary>
+    /// <summary>Usuário desativado não entra (RN-1.7). Só muda por <see cref="Desativar"/> e <see cref="Reativar"/>.</summary>
     public bool Ativo { get; private set; } = true;
+
+    /// <summary>
+    /// Está com a senha provisória (RN-1.8): até trocá-la, a API só aceita a troca de senha e a consulta da sessão.
+    /// </summary>
+    public bool TrocaDeSenhaObrigatoria { get; private set; }
 
     /// <summary>
     /// Marca o usuário como inativo (RN-1.7). Encerrar as sessões abertas e trocar o security stamp
     /// é de quem persiste a mudança (<c>GestaoUsuarios</c>).
     /// </summary>
     public void Desativar() => Ativo = false;
+
+    /// <summary>Volta a deixar o usuário entrar (story 1.4).</summary>
+    public void Reativar() => Ativo = true;
+
+    /// <summary>A senha atual é provisória: o usuário troca no próximo acesso (RN-1.8).</summary>
+    public void ExigirTrocaDeSenha() => TrocaDeSenhaObrigatoria = true;
+
+    /// <summary>O usuário definiu a própria senha.</summary>
+    public void ConcluirTrocaDeSenha() => TrocaDeSenhaObrigatoria = false;
 }
