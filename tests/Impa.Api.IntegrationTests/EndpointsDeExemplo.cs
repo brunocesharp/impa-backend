@@ -25,6 +25,10 @@ public sealed class EndpointsDeExemplo : IEndpointsAdicionais
     public const string Importacao = "/api/teste/importacao";
     public const string Item = "/api/teste/catalogo/itens/1";
 
+    /// <summary>PDV e caixa só em terminal registrado (story 1-6): os endpoints reais chegam nos épicos 5 e 6.</summary>
+    public const string PdvNoTerminal = "/api/teste/terminal/pdv/vender";
+    public const string CaixaNoTerminal = "/api/teste/terminal/caixa";
+
     public void Mapear(IEndpointRouteBuilder app)
     {
         app.MapPost(Pdv, () => Results.NoContent()).RequirePermissao(Permissoes.PdvVender);
@@ -33,5 +37,7 @@ public sealed class EndpointsDeExemplo : IEndpointsAdicionais
         app.MapPost(Importacao, () => Results.NoContent()).RequirePermissao(Permissoes.ImportacaoExecutar);
         app.MapGet(Item, () => Results.Ok(new ItemDeExemplo("Caderno 10 matérias", 32.90m, 18.40m)))
             .RequirePermissao(Permissoes.CatalogoVer);
+        app.MapPost(PdvNoTerminal, () => Results.NoContent()).RequirePermissao(Permissoes.PdvVender).RequireTerminal();
+        app.MapGet(CaixaNoTerminal, () => Results.Ok(Array.Empty<object>())).RequirePermissao(Permissoes.CaixaOperar).RequireTerminal();
     }
 }

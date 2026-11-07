@@ -1,11 +1,13 @@
 using Impa.Modules.Acesso.Application.Autenticacao;
 using Impa.Modules.Acesso.Application.Autenticacao.Commands.TrocarSenha;
 using Impa.Modules.Acesso.Application.Perfis;
+using Impa.Modules.Acesso.Application.Terminais;
 using Impa.Modules.Acesso.Application.Usuarios;
 using Impa.Modules.Acesso.Contracts;
 using Impa.Modules.Acesso.Infrastructure.Identity;
 using Impa.Modules.Acesso.Infrastructure.Persistence;
 using Impa.Modules.Acesso.Infrastructure.Sessoes;
+using Impa.Modules.Acesso.Infrastructure.Terminais;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,11 +41,20 @@ public static class DependencyInjection
         services.AddScoped<ICadastroUsuarios>(s => s.GetRequiredService<GestaoUsuarios>());
         services.AddScoped<ITrocaDeSenha, TrocaDeSenha>();
         services.AddScoped<IGestaoPerfis, GestaoPerfis>();
+        services.AddScoped<ITerminais, GestaoTerminais>();
         services.AddSingleton<CacheDePermissoes>();
         services.AddScoped<IPermissoesDoUsuario, PermissoesDoUsuario>();
         services.AddScoped<IUsuariosComPermissao, UsuariosComPermissao>(); // contrato público (story 4.2)
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<SessaoTicketStore>(); // sessões no banco; ligado ao cookie pelo Host
+
+        // Limpeza das sessões antigas (story 1-11); a tarefa periódica fica no Host.
+        services.AddOptions<LimpezaDeSessoesOptions>()
+            .BindConfiguration(LimpezaDeSessoesOptions.Secao)
+            .Validate(o => o.RetencaoEmDias >= 1 && o.IntervaloEmHoras >= 1,
+                "Acesso:LimpezaDeSessoes: retenção e intervalo precisam ser positivos.")
+            .ValidateOnStart();
+        services.AddScoped<ILimpezaDeSessoes, LimpezaDeSessoes>();
 
         return services
             .AddIdentityCore<Usuario>(options =>
