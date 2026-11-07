@@ -26,6 +26,8 @@ public static class Permissoes
     public const string CaixaConsultar = "caixa.consultar";
     public const string ClientesVer = "clientes.ver";
     public const string ClientesEditar = "clientes.editar";
+    public const string ClientesInativar = "clientes.inativar";
+    public const string FornecedoresGerenciar = "fornecedores.gerenciar";
     public const string FinanceiroVer = "financeiro.ver";
     public const string ImportacaoExecutar = "importacao.executar";
     public const string LiberarOperacoes = "liberar.operacoes";
@@ -36,6 +38,7 @@ public static class Permissoes
     private const string GrupoVendas = "Vendas e caixa";
     private const string GrupoCatalogo = "Catálogo";
     private const string GrupoClientes = "Clientes";
+    private const string GrupoFornecedores = "Fornecedores";
     private const string GrupoFinanceiro = "Financeiro";
     private const string GrupoAdministracao = "Administração";
 
@@ -55,6 +58,9 @@ public static class Permissoes
 
         new(ClientesVer, GrupoClientes, "Consultar clientes"),
         new(ClientesEditar, GrupoClientes, "Cadastrar e alterar clientes"),
+        new(ClientesInativar, GrupoClientes, "Inativar, reativar e excluir clientes"),
+
+        new(FornecedoresGerenciar, GrupoFornecedores, "Gerenciar fornecedores"),
 
         new(FinanceiroVer, GrupoFinanceiro, "Contas a pagar e financeiro"),
 
