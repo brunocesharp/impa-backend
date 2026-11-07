@@ -157,6 +157,48 @@ namespace Impa.Modules.Acesso.Infrastructure.Persistence.Migrations
                     b.ToTable("sessoes", "acesso");
                 });
 
+            modelBuilder.Entity("Impa.Modules.Acesso.Infrastructure.Terminais.Terminal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CriadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CriadoPor")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("NomeNormalizado")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<DateTimeOffset?>("RevogadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CriadoPor");
+
+                    b.HasIndex("NomeNormalizado")
+                        .IsUnique()
+                        .HasFilter("\"RevogadoEm\" IS NULL");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("terminais", "acesso");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.Property<int>("Id")
@@ -266,6 +308,15 @@ namespace Impa.Modules.Acesso.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("UsuarioId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Impa.Modules.Acesso.Infrastructure.Terminais.Terminal", b =>
+                {
+                    b.HasOne("Impa.Modules.Acesso.Infrastructure.Identity.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("CriadoPor")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
