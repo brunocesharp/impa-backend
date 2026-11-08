@@ -1,5 +1,6 @@
 using Impa.Modules.Financeiro.Application.Categorias;
 using Impa.Modules.Financeiro.Application.Contas;
+using Impa.Modules.Financeiro.Application.FormasDePagamento;
 using Impa.Modules.Financeiro.Domain;
 using Impa.Modules.Pessoas.Contracts;
 
@@ -46,6 +47,9 @@ internal sealed class ContasEmMemoria : IContasRepository
 
     public Task<Conta?> ObterAsync(Guid id, CancellationToken ct) => Task.FromResult(Itens.FirstOrDefault(c => c.Id == id));
 
+    public Task<Conta?> ObterPelaBaixaAsync(Guid baixaId, CancellationToken ct) =>
+        Task.FromResult(Itens.FirstOrDefault(c => c.Baixas.Any(b => b.Id == baixaId)));
+
     public Task<IReadOnlyList<Conta>> ListarAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<Conta>>(Itens.OrderBy(c => c.Vencimento).ToList());
 
@@ -55,7 +59,13 @@ internal sealed class ContasEmMemoria : IContasRepository
         return Task.CompletedTask;
     }
 
-    public Task SalvarAsync(CancellationToken ct) => Task.CompletedTask;
+    /// <summary>Simula outra operação mudando a conta entre a leitura e a gravação (versão da linha).</summary>
+    public bool RecusarGravacao { get; set; }
+
+    public Task<bool> SalvarAsync(CancellationToken ct) => Task.FromResult(!RecusarGravacao);
+
+    public Task<bool> ExisteBaixaDaFormaAsync(Guid formaDePagamentoId, CancellationToken ct) =>
+        Task.FromResult(Itens.Any(c => c.Baixas.Any(b => b.FormaDePagamentoId == formaDePagamentoId)));
 
     public Task RemoverAsync(Conta conta, CancellationToken ct)
     {
@@ -68,6 +78,36 @@ internal sealed class ContasEmMemoria : IContasRepository
 
     public Task<bool> ExisteDoFornecedorAsync(Guid fornecedorId, CancellationToken ct) =>
         Task.FromResult(Itens.Any(c => c.FornecedorId == fornecedorId));
+}
+
+internal sealed class FormasEmMemoria : IFormasDePagamentoRepository
+{
+    public List<FormaDePagamentoFinanceira> Itens { get; } = [];
+
+    public Task<FormaDePagamentoFinanceira?> ObterAsync(Guid id, CancellationToken ct) =>
+        Task.FromResult(Itens.FirstOrDefault(f => f.Id == id));
+
+    public Task<FormaDePagamentoFinanceira?> ObterPorNomeAsync(string nome, Guid? exceto, CancellationToken ct) =>
+        Task.FromResult(Itens.FirstOrDefault(f =>
+            string.Equals(f.Nome, nome, StringComparison.OrdinalIgnoreCase) && f.Id != exceto));
+
+    public Task<IReadOnlyList<FormaDePagamentoFinanceira>> ListarAsync(bool incluirInativas, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<FormaDePagamentoFinanceira>>(
+            Itens.Where(f => incluirInativas || f.Ativa).OrderBy(f => f.Nome).ToList());
+
+    public Task<bool> AdicionarAsync(FormaDePagamentoFinanceira forma, CancellationToken ct)
+    {
+        Itens.Add(forma);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> SalvarAsync(CancellationToken ct) => Task.FromResult(true);
+
+    public Task<bool> RemoverAsync(FormaDePagamentoFinanceira forma, CancellationToken ct)
+    {
+        Itens.Remove(forma);
+        return Task.FromResult(true);
+    }
 }
 
 /// <summary>Dublê do contrato do módulo Pessoas (3.7): só os fornecedores registrados aqui existem.</summary>

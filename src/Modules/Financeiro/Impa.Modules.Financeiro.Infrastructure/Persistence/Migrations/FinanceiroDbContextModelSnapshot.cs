@@ -23,6 +23,53 @@ namespace Impa.Modules.Financeiro.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Impa.Modules.Financeiro.Domain.Baixa", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ContaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly>("Data")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("EstornadaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("EstornadaPorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EstornadaPorNome")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("FormaDePagamentoId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MotivoDoEstorno")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset>("RegistradaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Valor")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContaId");
+
+                    b.HasIndex("FormaDePagamentoId");
+
+                    b.ToTable("baixas", "financeiro", t =>
+                        {
+                            t.HasCheckConstraint("ck_baixas_valor_positivo", "\"Valor\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("Impa.Modules.Financeiro.Domain.CategoriaFinanceira", b =>
                 {
                     b.Property<Guid>("Id")
@@ -129,8 +176,18 @@ namespace Impa.Modules.Financeiro.Infrastructure.Persistence.Migrations
                         .HasPrecision(14, 2)
                         .HasColumnType("numeric(14,2)");
 
+                    b.Property<decimal>("ValorPago")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)");
+
                     b.Property<DateOnly>("Vencimento")
                         .HasColumnType("date");
+
+                    b.Property<uint>("Versao")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -144,8 +201,76 @@ namespace Impa.Modules.Financeiro.Infrastructure.Persistence.Migrations
 
                     b.ToTable("contas", "financeiro", t =>
                         {
+                            t.HasCheckConstraint("ck_contas_valor_pago", "\"ValorPago\" >= 0 AND \"ValorPago\" <= \"Valor\"");
+
                             t.HasCheckConstraint("ck_contas_valor_positivo", "\"Valor\" > 0");
                         });
+                });
+
+            modelBuilder.Entity("Impa.Modules.Financeiro.Domain.FormaDePagamentoFinanceira", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Ativa")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CriadaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("formas_pagamento", "financeiro");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("0199a000-0000-7000-8000-000000000101"),
+                            Ativa = true,
+                            CriadaEm = new DateTimeOffset(new DateTime(2026, 11, 8, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Nome = "Dinheiro"
+                        },
+                        new
+                        {
+                            Id = new Guid("0199a000-0000-7000-8000-000000000102"),
+                            Ativa = true,
+                            CriadaEm = new DateTimeOffset(new DateTime(2026, 11, 8, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Nome = "Pix"
+                        },
+                        new
+                        {
+                            Id = new Guid("0199a000-0000-7000-8000-000000000103"),
+                            Ativa = true,
+                            CriadaEm = new DateTimeOffset(new DateTime(2026, 11, 8, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Nome = "Boleto"
+                        },
+                        new
+                        {
+                            Id = new Guid("0199a000-0000-7000-8000-000000000104"),
+                            Ativa = true,
+                            CriadaEm = new DateTimeOffset(new DateTime(2026, 11, 8, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Nome = "Transferência"
+                        });
+                });
+
+            modelBuilder.Entity("Impa.Modules.Financeiro.Domain.Baixa", b =>
+                {
+                    b.HasOne("Impa.Modules.Financeiro.Domain.Conta", null)
+                        .WithMany("Baixas")
+                        .HasForeignKey("ContaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Impa.Modules.Financeiro.Domain.FormaDePagamentoFinanceira", null)
+                        .WithMany()
+                        .HasForeignKey("FormaDePagamentoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Impa.Modules.Financeiro.Domain.Conta", b =>
@@ -155,6 +280,11 @@ namespace Impa.Modules.Financeiro.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CategoriaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Impa.Modules.Financeiro.Domain.Conta", b =>
+                {
+                    b.Navigation("Baixas");
                 });
 #pragma warning restore 612, 618
         }

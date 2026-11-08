@@ -1,12 +1,15 @@
+using System.Security.Claims;
 using Impa.Host.Http;
 using Impa.Host.Seguranca;
 using Impa.Modules.Acesso.Contracts;
+using Impa.Modules.Financeiro.Application.Baixas;
 using Impa.Modules.Financeiro.Application.Categorias;
 using Impa.Modules.Financeiro.Application.Categorias.Commands;
 using Impa.Modules.Financeiro.Application.Categorias.Queries;
 using Impa.Modules.Financeiro.Application.Contas;
 using Impa.Modules.Financeiro.Application.Contas.Commands;
 using Impa.Modules.Financeiro.Application.Contas.Queries;
+using Impa.Modules.Financeiro.Application.FormasDePagamento;
 using MediatR;
 
 namespace Impa.Host.Endpoints;
@@ -38,9 +41,20 @@ public sealed record AlterarContaRequest(
     string? NumeroDocumento,
     string? Observacao);
 
+/// <summary>Corpo de criar e renomear forma de pagamento financeira (RN-23.4).</summary>
+public sealed record FormaDePagamentoRequest(string? Nome);
+
+/// <summary>Corpo de pagar uma conta (RN-23.5): <c>Data</c> do pagamento (<c>AAAA-MM-DD</c>), valor e forma.</summary>
+public sealed record PagarContaRequest(DateOnly? Data, decimal? Valor, Guid? FormaDePagamentoId);
+
+/// <summary>Corpo de estornar uma baixa (RN-23.7): motivo obrigatório.</summary>
+public sealed record EstornarBaixaRequest(string? Motivo);
+
 /// <summary>
-/// <c>/api/financeiro/categorias</c> e <c>/api/financeiro/contas</c> (story 11-1): consultar com <c>financeiro.ver</c>;
-/// lançar, alterar e excluir com <c>financeiro.editar</c> (decisão de 07/11/2026; só o Administrador).
+/// <c>/api/financeiro/categorias</c>, <c>/api/financeiro/contas</c> (story 11-1), <c>/api/financeiro/formas-pagamento</c>,
+/// <c>/api/financeiro/contas/{id}/baixas</c> e <c>/api/financeiro/baixas/{id}/estorno</c> (story 11-2): consultar com
+/// <c>financeiro.ver</c>; lançar, alterar, excluir, pagar e estornar com <c>financeiro.editar</c> (decisão de 07/11/2026;
+/// só o Administrador).
 /// </summary>
 public static class FinanceiroEndpoints
 {
@@ -49,6 +63,17 @@ public static class FinanceiroEndpoints
         var financeiro = app.MapGroup("/api/financeiro").RequirePermissao(Permissoes.FinanceiroVer);
         MapCategorias(financeiro.MapGroup("/categorias").WithTags("Categorias financeiras"));
         MapContas(financeiro.MapGroup("/contas").WithTags("Contas a pagar"));
+        MapFormasDePagamento(financeiro.MapGroup("/formas-pagamento").WithTags("Formas de pagamento financeiras"));
+
+        financeiro.MapPost("/baixas/{id:guid}/estorno", EstornarBaixa)
+            .RequirePermissao(Permissoes.FinanceiroEditar)
+            .WithTags("Contas a pagar")
+            .WithName("EstornarBaixa")
+            .WithSummary("Estorna um pagamento com motivo; a baixa fica registrada como estornada e o saldo volta (cenário 23.5)")
+            .Produces<ContaDto>()
+            .ProducesValidationProblem()
+            .Produces<ErroDto>(StatusCodes.Status404NotFound)
+            .Produces<ErroDto>(StatusCodes.Status409Conflict);
         return app;
     }
 
@@ -124,8 +149,62 @@ public static class FinanceiroEndpoints
         grupo.MapDelete("/{id:guid}", ExcluirConta)
             .RequirePermissao(Permissoes.FinanceiroEditar)
             .WithName("ExcluirConta")
+            .WithSummary("Exclui a conta sem pagamento; com pagamento: 409 (RN-23.7)")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErroDto>(StatusCodes.Status404NotFound)
+            .Produces<ErroDto>(StatusCodes.Status409Conflict);
+
+        grupo.MapPost("/{id:guid}/baixas", PagarConta)
+            .RequirePermissao(Permissoes.FinanceiroEditar)
+            .WithName("PagarConta")
+            .WithSummary("Registra o pagamento total ou parcial; devolve a conta com o saldo (cenário 23.2, RN-23.5)")
+            .Produces<ContaDto>(StatusCodes.Status201Created)
+            .ProducesValidationProblem()
+            .Produces<ErroDto>(StatusCodes.Status404NotFound)
+            .Produces<ErroDto>(StatusCodes.Status409Conflict);
+    }
+
+    private static void MapFormasDePagamento(RouteGroupBuilder grupo)
+    {
+        grupo.MapGet("/", ListarFormasDePagamento)
+            .WithName("ListarFormasDePagamentoFinanceiras")
+            .WithSummary("Formas em ordem de nome; só ativas, salvo incluirInativas=true")
+            .Produces<IReadOnlyList<FormaDePagamentoDto>>();
+
+        grupo.MapPost("/", CriarFormaDePagamento)
+            .RequirePermissao(Permissoes.FinanceiroEditar)
+            .WithName("CriarFormaDePagamentoFinanceira")
+            .Produces<FormaDePagamentoDto>(StatusCodes.Status201Created)
+            .ProducesValidationProblem()
+            .Produces<ErroDto>(StatusCodes.Status409Conflict);
+
+        grupo.MapPut("/{id:guid}", AlterarFormaDePagamento)
+            .RequirePermissao(Permissoes.FinanceiroEditar)
+            .WithName("AlterarFormaDePagamentoFinanceira")
+            .Produces<FormaDePagamentoDto>()
+            .ProducesValidationProblem()
+            .Produces<ErroDto>(StatusCodes.Status404NotFound)
+            .Produces<ErroDto>(StatusCodes.Status409Conflict);
+
+        grupo.MapPost("/{id:guid}/inativar", InativarFormaDePagamento)
+            .RequirePermissao(Permissoes.FinanceiroEditar)
+            .WithName("InativarFormaDePagamentoFinanceira")
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ErroDto>(StatusCodes.Status404NotFound);
+
+        grupo.MapPost("/{id:guid}/reativar", ReativarFormaDePagamento)
+            .RequirePermissao(Permissoes.FinanceiroEditar)
+            .WithName("ReativarFormaDePagamentoFinanceira")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErroDto>(StatusCodes.Status404NotFound);
+
+        grupo.MapDelete("/{id:guid}", ExcluirFormaDePagamento)
+            .RequirePermissao(Permissoes.FinanceiroEditar)
+            .WithName("ExcluirFormaDePagamentoFinanceira")
+            .WithSummary("Exclui a forma sem pagamentos; com pagamentos: 409, só inativar")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErroDto>(StatusCodes.Status404NotFound)
+            .Produces<ErroDto>(StatusCodes.Status409Conflict);
     }
 
     // ---- Categorias ----
@@ -168,4 +247,38 @@ public static class FinanceiroEndpoints
 
     private static async Task<IResult> ExcluirConta(Guid id, ISender mediator, CancellationToken ct) =>
         (await mediator.Send(new ExcluirContaCommand(id), ct)).ParaHttp();
+
+    // ---- Baixas e estorno ----
+
+    private static async Task<IResult> PagarConta(Guid id, PagarContaRequest request, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new PagarContaCommand(
+            id, request.Data, request.Valor ?? 0m, request.FormaDePagamentoId ?? Guid.Empty), ct)).ParaHttp();
+
+    /// <summary>Quem estorna é o usuário da sessão (a política do grupo já exige a sessão).</summary>
+    private static async Task<IResult> EstornarBaixa(
+        Guid id, EstornarBaixaRequest request, ClaimsPrincipal usuario, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new EstornarBaixaCommand(
+            id, request.Motivo ?? string.Empty,
+            Guid.Parse(usuario.FindFirstValue(ClaimTypes.NameIdentifier)!),
+            usuario.FindFirstValue(ClaimTypes.Name) ?? string.Empty), ct)).ParaHttp();
+
+    // ---- Formas de pagamento ----
+
+    private static async Task<IResult> ListarFormasDePagamento(bool? incluirInativas, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new ListarFormasDePagamentoQuery(incluirInativas ?? false), ct)).ParaHttp();
+
+    private static async Task<IResult> CriarFormaDePagamento(FormaDePagamentoRequest request, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new CriarFormaDePagamentoCommand(request.Nome ?? string.Empty), ct)).ParaHttp();
+
+    private static async Task<IResult> AlterarFormaDePagamento(Guid id, FormaDePagamentoRequest request, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new AlterarFormaDePagamentoCommand(id, request.Nome ?? string.Empty), ct)).ParaHttp();
+
+    private static async Task<IResult> InativarFormaDePagamento(Guid id, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new InativarFormaDePagamentoCommand(id), ct)).ParaHttp();
+
+    private static async Task<IResult> ReativarFormaDePagamento(Guid id, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new ReativarFormaDePagamentoCommand(id), ct)).ParaHttp();
+
+    private static async Task<IResult> ExcluirFormaDePagamento(Guid id, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new ExcluirFormaDePagamentoCommand(id), ct)).ParaHttp();
 }

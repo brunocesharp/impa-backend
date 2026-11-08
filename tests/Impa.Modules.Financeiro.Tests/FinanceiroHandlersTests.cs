@@ -19,6 +19,7 @@ public class FinanceiroHandlersTests
 
     private readonly CategoriasEmMemoria _categorias = new();
     private readonly ContasEmMemoria _contas = new();
+    private readonly FormasEmMemoria _formas = new();
     private readonly PessoasFixas _pessoas = new();
     private readonly FornecedorResumo _alfa = new(Guid.CreateVersion7(), "Distribuidora Alfa", null, "11222333000181", true);
 
@@ -213,7 +214,7 @@ public class FinanceiroHandlersTests
         var categoria = await CategoriaAsync("Compra de mercadorias");
         var parcelas = (await LancarAsync(Lancamento(categoria.Id))).Value;
 
-        var alterada = await new AlterarContaCommandHandler(_contas, _categorias, _pessoas).Handle(
+        var alterada = await new AlterarContaCommandHandler(_contas, _categorias, _formas, _pessoas).Handle(
             new AlterarContaCommand(parcelas[1].Id, "Mochilas", categoria.Id, 340m, new DateOnly(2027, 3, 1), null, "NF 9", "Combinado"),
             CancellationToken.None);
         Assert.Equal(ResultStatus.Ok, alterada.Status);
@@ -222,7 +223,7 @@ public class FinanceiroHandlersTests
         var excluida = await new ExcluirContaCommandHandler(_contas).Handle(new ExcluirContaCommand(parcelas[2].Id), CancellationToken.None);
         Assert.Equal(ResultStatus.Ok, excluida.Status);
 
-        var lista = await new ListarContasQueryHandler(_contas, _categorias).Handle(new ListarContasQuery(), CancellationToken.None);
+        var lista = await new ListarContasQueryHandler(_contas, _categorias, _formas).Handle(new ListarContasQuery(), CancellationToken.None);
         Assert.Equal([parcelas[0].Id, parcelas[1].Id], lista.Value.Select(c => c.Id));
     }
 
@@ -233,7 +234,7 @@ public class FinanceiroHandlersTests
         var internet = await CategoriaAsync("Internet");
         var conta = Assert.Single((await LancarAsync(Lancamento(energia.Id, 350m, 1, null))).Value);
         _categorias.Itens.ForEach(c => c.Inativar());
-        var handler = new AlterarContaCommandHandler(_contas, _categorias, _pessoas);
+        var handler = new AlterarContaCommandHandler(_contas, _categorias, _formas, _pessoas);
 
         var mesma = await handler.Handle(new AlterarContaCommand(conta.Id, "Energia outubro", energia.Id, 350m, conta.Vencimento, null, null, null), CancellationToken.None);
         var outra = await handler.Handle(new AlterarContaCommand(conta.Id, "Energia outubro", internet.Id, 350m, conta.Vencimento, null, null, null), CancellationToken.None);
@@ -251,7 +252,7 @@ public class FinanceiroHandlersTests
         _pessoas.Fornecedores.Clear();
         _pessoas.Consultas = 0;
 
-        var alterada = await new AlterarContaCommandHandler(_contas, _categorias, _pessoas).Handle(
+        var alterada = await new AlterarContaCommandHandler(_contas, _categorias, _formas, _pessoas).Handle(
             new AlterarContaCommand(conta.Id, "Mochilas", categoria.Id, 500m, conta.Vencimento, "11222333000181", null, null),
             CancellationToken.None);
 
@@ -278,7 +279,7 @@ public class FinanceiroHandlersTests
     {
         Assert.Equal(ResultStatus.NotFound, (await new ExcluirContaCommandHandler(_contas)
             .Handle(new ExcluirContaCommand(Guid.CreateVersion7()), CancellationToken.None)).Status);
-        Assert.Equal(ResultStatus.NotFound, (await new ObterContaQueryHandler(_contas, _categorias)
+        Assert.Equal(ResultStatus.NotFound, (await new ObterContaQueryHandler(_contas, _categorias, _formas)
             .Handle(new ObterContaQuery(Guid.CreateVersion7()), CancellationToken.None)).Status);
     }
 
