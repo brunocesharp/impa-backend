@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Text;
-
 namespace Impa.Modules.Configuracao.Domain.Auditoria;
 
 /// <summary>
@@ -95,13 +92,14 @@ public sealed class CampoAuditado
     public bool Omitido { get; private set; }
 
     /// <summary>
-    /// Monta o campo recusando o valor quando ele é sensível: marcado pelo módulo de origem ou com nome conhecido
-    /// (<see cref="CamposSensiveis"/>).
+    /// Monta o campo recusando o valor quando ele é sensível. O contrato do evento já tira o valor antes do Outbox do
+    /// módulo de origem; esta recusa é a segunda barreira (quem decide o que é sensível é o handler, pela marca do
+    /// módulo ou pelo nome conhecido).
     /// </summary>
-    public static CampoAuditado De(string campo, string? antes, string? depois, bool marcadoComoSensivel)
+    public static CampoAuditado De(string campo, string? antes, string? depois, bool sensivel)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(campo);
-        var omitido = marcadoComoSensivel || CamposSensiveis.EhSensivel(campo);
+        var omitido = sensivel;
 
         return new CampoAuditado
         {
@@ -110,68 +108,5 @@ public sealed class CampoAuditado
             Depois = omitido || depois is null ? null : RegistroDeAuditoria.Cortar(depois, ValorMaximo),
             Omitido = omitido,
         };
-    }
-}
-
-/// <summary>
-/// Nomes de campo que nunca têm o valor gravado na auditoria (CA-4): senha e CSC (RN-15.6) e os dados pessoais da
-/// RN-14.6 (CPF, telefone, e-mail, endereço). Compara por palavra do nome (<c>senhaDoCertificado</c>,
-/// <c>cpf_do_cliente</c>, <c>Endereco.Logradouro</c>), sem acento e sem diferenciar maiúsculas.
-/// </summary>
-public static class CamposSensiveis
-{
-    private static readonly HashSet<string> Palavras = new(StringComparer.Ordinal)
-    {
-        "senha", "password", "csc", "token", "segredo", "secret",
-        "cpf", "telefone", "fone", "celular", "whatsapp", "email", "endereco", "logradouro", "cep", "bairro",
-    };
-
-    public static bool EhSensivel(string campo)
-    {
-        if (string.IsNullOrWhiteSpace(campo))
-            return false;
-
-        var semAcento = SemAcento(campo);
-        var juntas = new string(semAcento.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
-        return Palavras.Contains(juntas) || PalavrasDe(semAcento).Any(Palavras.Contains);
-    }
-
-    /// <summary>Quebra por separador (<c>_ . - espaço</c>) e por maiúscula (camelCase/PascalCase).</summary>
-    private static IEnumerable<string> PalavrasDe(string nome)
-    {
-        var atual = new StringBuilder();
-        for (var i = 0; i < nome.Length; i++)
-        {
-            var c = nome[i];
-            if (!char.IsLetterOrDigit(c))
-            {
-                if (atual.Length > 0) yield return atual.ToString().ToLowerInvariant();
-                atual.Clear();
-                continue;
-            }
-
-            var inicioDePalavra = char.IsUpper(c) && atual.Length > 0
-                && (char.IsLower(nome[i - 1]) || (i + 1 < nome.Length && char.IsLower(nome[i + 1])));
-            if (inicioDePalavra)
-            {
-                yield return atual.ToString().ToLowerInvariant();
-                atual.Clear();
-            }
-
-            atual.Append(c);
-        }
-
-        if (atual.Length > 0)
-            yield return atual.ToString().ToLowerInvariant();
-    }
-
-    private static string SemAcento(string texto)
-    {
-        var decomposto = texto.Normalize(NormalizationForm.FormD);
-        var resultado = new StringBuilder(decomposto.Length);
-        foreach (var c in decomposto)
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
-                resultado.Append(c);
-        return resultado.ToString().Normalize(NormalizationForm.FormC);
     }
 }

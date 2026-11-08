@@ -74,16 +74,56 @@ public class AuditoriaTests
     [InlineData("Endereco.Logradouro")]
     [InlineData("Cep")]
     [InlineData("CscId")] // identificador do CSC: fica de fora junto com o CSC
-    public void Campo_com_nome_sensivel_e_recusado_sem_valores(string nome)
+    public void Campo_com_nome_sensivel_sai_do_contrato_sem_valores(string nome)
     {
         Assert.True(CamposSensiveis.EhSensivel(nome));
 
-        var campo = CampoAuditado.De(nome, "valor antigo", "valor novo", marcadoComoSensivel: false);
+        // R1: o valor sai já na construção do evento, antes do Outbox do módulo de origem.
+        var campo = new CampoAlterado(nome, "valor antigo", "valor novo");
 
         Assert.Equal(nome, campo.Campo);
         Assert.Null(campo.Antes);
         Assert.Null(campo.Depois);
-        Assert.True(campo.Omitido);
+        Assert.True(campo.Sensivel);
+    }
+
+    [Fact]
+    public void Campo_marcado_como_sensivel_sai_do_contrato_sem_valores_mesmo_com_nome_comum()
+    {
+        var campo = new CampoAlterado("ChaveDoCertificado", "abc", "def", Sensivel: true);
+
+        Assert.Equal(("ChaveDoCertificado", null, null, true), (campo.Campo, campo.Antes, campo.Depois, campo.Sensivel));
+    }
+
+    [Fact]
+    public void Evento_serializado_para_o_Outbox_nao_leva_valor_sensivel()
+    {
+        var serializador = new SerializadorDeEventos();
+        serializador.Registrar(typeof(OperacaoSensivelAuditada));
+        var evento = Evento(
+            new CampoAlterado("Ambiente", "Homologação", "Produção"),
+            new CampoAlterado("Csc", "CSC-ANTIGO-123", "CSC-NOVO-456"),
+            new CampoAlterado("SenhaDoCertificado", "senha-antiga", "senha-nova"),
+            new CampoAlterado("Cpf", "111.444.777-35", "529.982.247-25"),
+            new CampoAlterado("Observacao", "x-antigo", "y-novo", Sensivel: true));
+
+        var conteudo = serializador.Serializar(evento);
+
+        foreach (var valor in new[] { "CSC-ANTIGO-123", "CSC-NOVO-456", "senha-antiga", "senha-nova", "111.444.777-35", "529.982.247-25", "x-antigo", "y-novo" })
+            Assert.DoesNotContain(valor, conteudo);
+        var lido = (OperacaoSensivelAuditada)serializador.Desserializar(evento.Tipo, evento.Versao, conteudo);
+        Assert.Equal(evento.Campos, lido.Campos);
+        Assert.Equal([false, true, true, true, true], lido.Campos.Select(c => c.Sensivel));
+    }
+
+    [Theory]
+    [InlineData("Senha")]
+    [InlineData("Observacao")]
+    public void Registro_recusa_o_valor_do_campo_sensivel_como_segunda_barreira(string nome)
+    {
+        var campo = CampoAuditado.De(nome, "valor antigo", "valor novo", sensivel: true);
+
+        Assert.Equal((nome, null, null, true), (campo.Campo, campo.Antes, campo.Depois, campo.Omitido));
     }
 
     [Theory]
@@ -99,8 +139,10 @@ public class AuditoriaTests
     {
         Assert.False(CamposSensiveis.EhSensivel(nome));
 
-        var campo = CampoAuditado.De(nome, "a", "b", marcadoComoSensivel: false);
+        var alterado = new CampoAlterado(nome, "a", "b");
+        var campo = CampoAuditado.De(nome, "a", "b", sensivel: false);
 
+        Assert.Equal(("a", "b", false), (alterado.Antes, alterado.Depois, alterado.Sensivel));
         Assert.Equal(("a", "b", false), (campo.Antes, campo.Depois, campo.Omitido));
     }
 
@@ -141,7 +183,7 @@ public class AuditoriaTests
     [Fact]
     public void Valor_muito_longo_e_cortado_no_maximo()
     {
-        var campo = CampoAuditado.De("Descricao", new string('a', 5000), "b", marcadoComoSensivel: false);
+        var campo = CampoAuditado.De("Descricao", new string('a', 5000), "b", sensivel: false);
 
         Assert.Equal(CampoAuditado.ValorMaximo, campo.Antes!.Length);
     }

@@ -172,6 +172,8 @@ public class AuditoriaTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFacto
         var evento = await PublicarAsync(Evento(Guid.NewGuid(), "Iara", "Pessoas", "Cliente", "cliente.alterado",
             DateTimeOffset.UtcNow,
             new CampoAlterado("Nome", "Iara S.", "Iara Souza"),
+            new CampoAlterado("Csc", "CSC-ANTIGO-123", "CSC-NOVO-456"),
+            new CampoAlterado("SenhaDoCertificado", "senha-antiga", "senha-nova"),
             new CampoAlterado("Cpf", "111.444.777-35", "529.982.247-25"),
             new CampoAlterado("Telefone", "31 99999-0000", "31 98888-0000"),
             new CampoAlterado("Email", "iara@antigo.com", "iara@novo.com"),
@@ -182,12 +184,19 @@ public class AuditoriaTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFacto
             .SqlQuery<string>($"SELECT campos::text AS \"Value\" FROM configuracao.auditoria WHERE \"Id\" = {evento.Id}")
             .SingleAsync());
 
-        foreach (var valor in new[] { "111.444.777-35", "529.982.247-25", "99999-0000", "98888-0000", "iara@", "Rua A", "Rua B", "\"x\"", "\"y\"" })
-            Assert.DoesNotContain(valor, gravado);
-        Assert.Contains("Iara Souza", gravado);
+        // R1: nem o Outbox do módulo de origem guarda os valores (o evento já sai do contrato sem eles).
+        var noOutbox = await NoBancoAsync(c => c.Set<OutboxMensagem>()
+            .Where(m => m.Id == evento.Id).Select(m => m.Conteudo).SingleAsync());
+
+        foreach (var conteudo in new[] { gravado, noOutbox })
+        {
+            foreach (var valor in new[] { "111.444.777-35", "529.982.247-25", "99999-0000", "98888-0000", "iara@", "Rua A", "Rua B", "\"x\"", "\"y\"", "CSC-ANTIGO-123", "CSC-NOVO-456", "senha-antiga", "senha-nova" })
+                Assert.DoesNotContain(valor, conteudo);
+            Assert.Contains("Iara Souza", conteudo);
+        }
 
         var item = Assert.Single((await ConsultarAsync(await AdminAsync(), "?usuario=iara")).Itens);
-        Assert.Equal(["Cpf", "Telefone", "Email", "Endereco", "Observacao"], item.Campos.Where(c => c.Omitido).Select(c => c.Campo));
+        Assert.Equal(["Csc", "SenhaDoCertificado", "Cpf", "Telefone", "Email", "Endereco", "Observacao"], item.Campos.Where(c => c.Omitido).Select(c => c.Campo));
         Assert.All(item.Campos.Where(c => c.Omitido), c => Assert.Equal((null, null), (c.Antes, c.Depois)));
     }
 
