@@ -5,7 +5,9 @@ using Impa.Modules.Acesso.Application.Perfis;
 using Impa.Modules.Acesso.Contracts;
 using Impa.Modules.Financeiro.Application.Categorias;
 using Impa.Modules.Financeiro.Application.Contas;
+using Impa.Modules.Financeiro.Application.FormasDePagamento;
 using Impa.Modules.Pessoas.Application.Fornecedores;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Impa.Api.IntegrationTests;
@@ -13,6 +15,8 @@ namespace Impa.Api.IntegrationTests;
 /// <summary>
 /// Story 11-1 — categorias, lançamento e parcelamento de contas (cenário 23.1, RN-23.1 a RN-23.3), a porta
 /// <c>IHistoricoDaPessoa</c> implementada pelo Financeiro (RN-14.4) e as permissões <c>financeiro.ver</c> / <c>financeiro.editar</c>.
+/// Story 11-2 — formas de pagamento (RN-23.4), pagamento total ou parcial (cenário 23.2, RN-23.5), estorno (cenário 23.5)
+/// e a conta com pagamento (RN-23.7).
 /// </summary>
 public class FinanceiroTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFactory>
 {
@@ -339,4 +343,404 @@ public class FinanceiroTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFact
         var me = JsonDocument.Parse(await (await admin.GetAsync("/api/auth/me")).Content.ReadAsStringAsync()).RootElement;
         Assert.Contains(Permissoes.FinanceiroEditar, me.GetProperty("permissoes").EnumerateArray().Select(p => p.GetString()));
     }
+
+    // ==== Story 11-2 — pagar e estornar ====
+
+    private const string Formas = "/api/financeiro/formas-pagamento";
+
+    private static async Task<ContaDto> ContaAsync(ClienteApi admin, string descricao, string categoria, decimal valor,
+        string vencimento = "2026-11-10", string? fornecedorDocumento = null, string? numeroDocumento = null)
+    {
+        var categoriaId = (await ListaAsync<CategoriaDto>(admin, Categorias)).Single(c => c.Nome == categoria).Id;
+        var resposta = await admin.PostAsync(Contas, new
+        {
+            descricao, categoriaId, valor, vencimento, parcelas = 1, fornecedorDocumento, numeroDocumento, observacao = (string?)null,
+        });
+        Assert.Equal(HttpStatusCode.Created, resposta.StatusCode);
+        return (await resposta.Content.ReadFromJsonAsync<List<ContaDto>>())!.Single();
+    }
+
+    private static async Task<Guid> FormaAsync(ClienteApi admin, string nome) =>
+        (await ListaAsync<FormaDePagamentoDto>(admin, Formas)).Single(f => f.Nome == nome).Id;
+
+    private static Task<HttpResponseMessage> PagarAsync(ClienteApi api, Guid contaId, decimal valor, string data, Guid formaDePagamentoId) =>
+        api.PostAsync($"{Contas}/{contaId}/baixas", new { data, valor, formaDePagamentoId });
+
+    private static async Task<ContaDto> ObterAsync(ClienteApi api, Guid contaId) =>
+        (await (await api.GetAsync($"{Contas}/{contaId}")).Content.ReadFromJsonAsync<ContaDto>())!;
+
+    // ---- Cenário 23.2 (CA-1, CA-4) ----
+
+    [Theory]
+    [InlineData("500.00", "paga", "0")]
+    [InlineData("200.00", "parcialmente-paga", "300.00")]
+    public async Task Cenario_23_2_registrar_o_pagamento_de_uma_conta_de_500(string valor, string situacao, string saldo)
+    {
+        var admin = await AdminAsync();
+        var pix = await FormaAsync(admin, "Pix");
+        // Dado que a conta "Aluguel novembro" tem saldo R$ 500,00
+        var conta = await ContaAsync(admin, "Aluguel novembro", "Aluguel", 500m);
+        Assert.Equal((500m, "sem-pagamento"), (conta.Saldo, conta.SituacaoDoPagamento));
+
+        // Quando o administrador paga <valor> em 05/11/2026 via Pix
+        var resposta = await PagarAsync(admin, conta.Id, Dec(valor), "2026-11-05", pix);
+
+        // Então <resultado>
+        Assert.Equal(HttpStatusCode.Created, resposta.StatusCode);
+        var paga = await ObterAsync(admin, conta.Id);
+        Assert.Equal((situacao, Dec(saldo), Dec(valor)), (paga.SituacaoDoPagamento, paga.Saldo, paga.ValorPago));
+        var baixa = Assert.Single(paga.Baixas);
+        Assert.Equal((new DateOnly(2026, 11, 5), Dec(valor), "Pix", false), (baixa.Data, baixa.Valor, baixa.FormaDePagamento, baixa.Estornada));
+    }
+
+    [Fact]
+    public async Task Cenario_23_2_pagar_600_numa_conta_de_500_e_recusado()
+    {
+        var admin = await AdminAsync();
+        var conta = await ContaAsync(admin, "Aluguel novembro", "Aluguel", 500m);
+
+        var resposta = await PagarAsync(admin, conta.Id, 600m, "2026-11-05", await FormaAsync(admin, "Pix"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+        var erros = JsonDocument.Parse(await resposta.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("Valor maior que o saldo da conta (R$ 500,00)", erros.GetProperty("Valor")[0].GetString());
+        Assert.Equal((500m, "sem-pagamento"), ((await ObterAsync(admin, conta.Id)).Saldo, (await ObterAsync(admin, conta.Id)).SituacaoDoPagamento));
+    }
+
+    [Fact]
+    public async Task RN_23_5_data_valor_e_forma_obrigatorios_e_pagamentos_parciais_ate_quitar()
+    {
+        var admin = await AdminAsync();
+        var conta = await ContaAsync(admin, "Internet novembro", "Internet", 1000m);
+        var boleto = await FormaAsync(admin, "Boleto");
+
+        var vazio = await admin.PostAsync($"{Contas}/{conta.Id}/baixas", new { });
+        Assert.Equal(HttpStatusCode.BadRequest, vazio.StatusCode);
+        var erros = JsonDocument.Parse(await vazio.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("Informe a data do pagamento", erros.GetProperty("Data")[0].GetString());
+        Assert.Equal("O valor precisa ser maior que zero", erros.GetProperty("Valor")[0].GetString());
+        Assert.Equal("Informe a forma de pagamento", erros.GetProperty("FormaDePagamentoId")[0].GetString());
+
+        Assert.Equal(HttpStatusCode.Created, (await PagarAsync(admin, conta.Id, 400m, "2026-11-05", boleto)).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await PagarAsync(admin, conta.Id, 600m, "2026-11-06", boleto)).StatusCode);
+        var quitada = await ObterAsync(admin, conta.Id);
+        Assert.Equal((0m, "paga", 2), (quitada.Saldo, quitada.SituacaoDoPagamento, quitada.Baixas.Count));
+
+        var depois = await PagarAsync(admin, conta.Id, 0.01m, "2026-11-07", boleto);
+        var erroDepois = JsonDocument.Parse(await depois.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("Valor maior que o saldo da conta (R$ 0,00)", erroDepois.GetProperty("Valor")[0].GetString());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await PagarAsync(admin, Guid.CreateVersion7(), 10m, "2026-11-05", boleto)).StatusCode);
+    }
+
+    // ---- Cenário 23.5 (CA-2, CA-5) ----
+
+    [Fact]
+    public async Task Cenario_23_5_estornar_uma_baixa()
+    {
+        var admin = await AdminAsync();
+        // Dado que a conta "Energia outubro" foi paga por engano com R$ 350,00
+        var conta = await ContaAsync(admin, "Energia outubro", "Energia", 350m, "2026-10-20");
+        Assert.Equal(HttpStatusCode.Created, (await PagarAsync(admin, conta.Id, 350m, "2026-11-05", await FormaAsync(admin, "Pix"))).StatusCode);
+        var baixa = (await ObterAsync(admin, conta.Id)).Baixas.Single();
+
+        // Quando o administrador estorna o pagamento com o motivo "Pagamento lançado na conta errada"
+        var antes = factory.Clock.GetUtcNow();
+        var resposta = await admin.PostAsync($"/api/financeiro/baixas/{baixa.Id}/estorno", new { motivo = "Pagamento lançado na conta errada" });
+        var depois = factory.Clock.GetUtcNow();
+
+        // Então a conta volta a ter saldo R$ 350,00 e a situação conforme o vencimento (nesta story: "sem pagamento" com
+        // o vencimento original; a situação pelo vencimento é da 11.3 — decisão de A1, 08/11/2026)
+        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+        var estornada = await ObterAsync(admin, conta.Id);
+        Assert.Equal((350m, 0m, "sem-pagamento", new DateOnly(2026, 10, 20)),
+            (estornada.Saldo, estornada.ValorPago, estornada.SituacaoDoPagamento, estornada.Vencimento));
+        // E o estorno fica registrado
+        var registro = Assert.Single(estornada.Baixas);
+        Assert.Equal((baixa.Id, true, ImpaApiFactory.AdminUsuario, "Pagamento lançado na conta errada"),
+            (registro.Id, registro.Estornada, registro.EstornadaPor, registro.MotivoDoEstorno));
+        // O Postgres guarda microssegundos: a janela tolera o arredondamento.
+        Assert.InRange(registro.EstornadaEm!.Value, antes.AddMilliseconds(-1), depois.AddMilliseconds(1));
+
+        var deNovo = await admin.PostAsync($"/api/financeiro/baixas/{baixa.Id}/estorno", new { motivo = "De novo" });
+        Assert.Equal(HttpStatusCode.Conflict, deNovo.StatusCode);
+        Assert.Equal("Este pagamento já foi estornado", (await deNovo.Content.ReadFromJsonAsync<ErroResposta>())!.Mensagem);
+
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await admin.PostAsync($"/api/financeiro/baixas/{Guid.CreateVersion7()}/estorno", new { motivo = "x" })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Estorno_exige_motivo_de_ate_500_caracteres_e_a_baixa_continua_ativa()
+    {
+        var admin = await AdminAsync();
+        var conta = await ContaAsync(admin, "Energia setembro", "Energia", 210m, "2026-09-20");
+        Assert.Equal(HttpStatusCode.Created, (await PagarAsync(admin, conta.Id, 210m, "2026-11-05", await FormaAsync(admin, "Pix"))).StatusCode);
+        var baixa = (await ObterAsync(admin, conta.Id)).Baixas.Single();
+        var estorno = $"/api/financeiro/baixas/{baixa.Id}/estorno";
+
+        var semMotivo = await admin.PostAsync(estorno, new { motivo = " " });
+        Assert.Equal(HttpStatusCode.BadRequest, semMotivo.StatusCode);
+        var erros = JsonDocument.Parse(await semMotivo.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("Informe o motivo do estorno", erros.GetProperty("Motivo")[0].GetString());
+
+        var longo = await admin.PostAsync(estorno, new { motivo = new string('m', 501) });
+        Assert.Equal(HttpStatusCode.BadRequest, longo.StatusCode);
+        var errosLongo = JsonDocument.Parse(await longo.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("Use no máximo 500 caracteres", errosLongo.GetProperty("Motivo")[0].GetString());
+
+        var ainda = await ObterAsync(admin, conta.Id);
+        Assert.Equal(("paga", 0m), (ainda.SituacaoDoPagamento, ainda.Saldo));
+        Assert.False(Assert.Single(ainda.Baixas).Estornada);
+
+        // No limite (500), é aceito.
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync(estorno, new { motivo = new string('m', 500) })).StatusCode);
+    }
+
+    // ---- RN-23.7 (CA-5) ----
+
+    [Fact]
+    public async Task RN_23_7_conta_com_pagamento_so_edita_descricao_e_observacao_e_nao_e_excluida()
+    {
+        var admin = await AdminAsync();
+        var omega = await FornecedorAsync(admin, "Imobiliária Ômega", Cnpj("232000000001"));
+        var conta = await ContaAsync(admin, "Aluguel dezembro", "Aluguel", 2000m, "2026-12-10", omega.Documento, "Recibo 12");
+        var baixa = (await (await PagarAsync(admin, conta.Id, 500m, "2026-11-05", await FormaAsync(admin, "Transferência")))
+            .Content.ReadFromJsonAsync<ContaDto>())!.Baixas.Single();
+        var aluguel = conta.CategoriaId;
+
+        // Só descrição e observação: aceito.
+        var permitida = await admin.PutAsync($"{Contas}/{conta.Id}", new
+        {
+            descricao = "Aluguel dez/26", categoriaId = aluguel, valor = 2000m, vencimento = "2026-12-10",
+            fornecedorDocumento = conta.Fornecedor!.Documento, numeroDocumento = "Recibo 12", observacao = "Entrada paga",
+        });
+        Assert.Equal(HttpStatusCode.OK, permitida.StatusCode);
+        var alterada = await ObterAsync(admin, conta.Id);
+        Assert.Equal(("Aluguel dez/26", "Entrada paga", 1500m), (alterada.Descricao, alterada.Observacao, alterada.Saldo));
+
+        // Categoria, fornecedor, documento, valor e vencimento travam.
+        var energia = (await ListaAsync<CategoriaDto>(admin, Categorias)).Single(c => c.Nome == "Energia").Id;
+        var travada = await admin.PutAsync($"{Contas}/{conta.Id}", new
+        {
+            descricao = "Aluguel dez/26", categoriaId = energia, valor = 2100m, vencimento = "2026-12-15",
+            fornecedorDocumento = (string?)null, numeroDocumento = "Recibo 13", observacao = "Entrada paga",
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, travada.StatusCode);
+        var erros = JsonDocument.Parse(await travada.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        foreach (var campo in new[] { "CategoriaId", "Valor", "Vencimento", "FornecedorDocumento", "NumeroDocumento" })
+            Assert.Equal("Conta com pagamento: só a descrição e a observação podem ser alteradas", erros.GetProperty(campo)[0].GetString());
+        Assert.Equal((2000m, new DateOnly(2026, 12, 10), omega.Id), ((await ObterAsync(admin, conta.Id)).Valor,
+            (await ObterAsync(admin, conta.Id)).Vencimento, (await ObterAsync(admin, conta.Id)).Fornecedor!.Id));
+
+        // Excluir conta com pagamento é recusado.
+        var excluir = await admin.DeleteAsync($"{Contas}/{conta.Id}");
+        Assert.Equal(HttpStatusCode.Conflict, excluir.StatusCode);
+        Assert.Equal("Conta com pagamento não pode ser excluída. Estorne os pagamentos antes",
+            (await excluir.Content.ReadFromJsonAsync<ErroResposta>())!.Mensagem);
+
+        // Estornado o pagamento, a conta volta a ser editável e pode ser excluída (com a baixa estornada).
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync($"/api/financeiro/baixas/{baixa.Id}/estorno", new { motivo = "Lançado errado" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"{Contas}/{conta.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"{Contas}/{conta.Id}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Dois_pagamentos_ao_mesmo_tempo_nao_passam_do_saldo()
+    {
+        var admin = await AdminAsync();
+        var conta = await ContaAsync(admin, "Imposto novembro", "Impostos", 300m);
+        var dinheiro = await FormaAsync(admin, "Dinheiro");
+        await using var primeiro = factory.Services.CreateAsyncScope();
+        await using var segundo = factory.Services.CreateAsyncScope();
+        var repositorio1 = primeiro.ServiceProvider.GetRequiredService<IContasRepository>();
+        var repositorio2 = segundo.ServiceProvider.GetRequiredService<IContasRepository>();
+
+        // As duas operações leem a conta com saldo R$ 300,00 antes de qualquer uma gravar.
+        var lida1 = (await repositorio1.ObterAsync(conta.Id, CancellationToken.None))!;
+        var lida2 = (await repositorio2.ObterAsync(conta.Id, CancellationToken.None))!;
+        lida1.Pagar(new DateOnly(2026, 11, 5), 300m, dinheiro, DateTimeOffset.UtcNow);
+        lida2.Pagar(new DateOnly(2026, 11, 5), 300m, dinheiro, DateTimeOffset.UtcNow);
+
+        Assert.Equal(GravacaoDaConta.Gravada, await repositorio1.SalvarAsync(CancellationToken.None));
+        // a versão da linha mudou
+        Assert.Equal(GravacaoDaConta.AlteradaAoMesmoTempo, await repositorio2.SalvarAsync(CancellationToken.None));
+
+        var final = await ObterAsync(admin, conta.Id);
+        Assert.Equal((0m, 300m, 1), (final.Saldo, final.ValorPago, final.Baixas.Count));
+    }
+
+    [Fact]
+    public async Task Excluir_e_pagar_ao_mesmo_tempo_a_exclusao_e_recusada_com_409_e_a_baixa_continua()
+    {
+        var admin = await AdminAsync();
+        var conta = await ContaAsync(admin, "Taxa do alvará", "Impostos", 120m);
+        var dinheiro = await FormaAsync(admin, "Dinheiro");
+        await using var excluir = factory.Services.CreateAsyncScope();
+        await using var pagar = factory.Services.CreateAsyncScope();
+
+        // A exclusão lê a conta ainda sem pagamento...
+        var lidaParaExcluir = (await excluir.ServiceProvider.GetRequiredService<IContasRepository>().ObterAsync(conta.Id, CancellationToken.None))!;
+        Assert.False(lidaParaExcluir.TemPagamento);
+
+        // ...e, antes de ela gravar, o pagamento é gravado em outra operação.
+        var repositorioDoPagamento = pagar.ServiceProvider.GetRequiredService<IContasRepository>();
+        var lidaParaPagar = (await repositorioDoPagamento.ObterAsync(conta.Id, CancellationToken.None))!;
+        lidaParaPagar.Pagar(new DateOnly(2026, 11, 5), 120m, dinheiro, DateTimeOffset.UtcNow);
+        Assert.Equal(GravacaoDaConta.Gravada, await repositorioDoPagamento.SalvarAsync(CancellationToken.None));
+
+        // O caso de uso, no mesmo escopo, ainda vê a conta lida sem pagamento: o DELETE leva a versão antiga e é recusado.
+        var resultado = await excluir.ServiceProvider.GetRequiredService<MediatR.ISender>()
+            .Send(new Impa.Modules.Financeiro.Application.Contas.Commands.ExcluirContaCommand(conta.Id));
+        Assert.Equal(Ardalis.Result.ResultStatus.Conflict, resultado.Status);
+        Assert.Equal("A conta foi alterada em outra operação. Atualize e tente de novo", Assert.Single(resultado.Errors));
+
+        var final = await ObterAsync(admin, conta.Id);
+        Assert.Equal(("paga", 1), (final.SituacaoDoPagamento, final.Baixas.Count));
+    }
+
+    [Fact]
+    public async Task Excluir_primeiro_e_pagar_depois_o_pagamento_recebe_conta_nao_encontrada_e_nada_e_gravado()
+    {
+        var admin = await AdminAsync();
+        var conta = await ContaAsync(admin, "Taxa de lixo", "Impostos", 95m);
+        var dinheiro = await FormaAsync(admin, "Dinheiro");
+        await using var pagar = factory.Services.CreateAsyncScope();
+        await using var excluir = factory.Services.CreateAsyncScope();
+
+        // O pagamento lê a conta e registra a baixa (ainda não gravada)...
+        var repositorioDoPagamento = pagar.ServiceProvider.GetRequiredService<IContasRepository>();
+        var lidaParaPagar = (await repositorioDoPagamento.ObterAsync(conta.Id, CancellationToken.None))!;
+        lidaParaPagar.Pagar(new DateOnly(2026, 11, 5), 95m, dinheiro, DateTimeOffset.UtcNow);
+
+        // ...e, antes de ele gravar, a exclusão é gravada em outra operação.
+        var repositorioDaExclusao = excluir.ServiceProvider.GetRequiredService<IContasRepository>();
+        var lidaParaExcluir = (await repositorioDaExclusao.ObterAsync(conta.Id, CancellationToken.None))!;
+        Assert.True(await repositorioDaExclusao.RemoverAsync(lidaParaExcluir, CancellationToken.None));
+
+        // O INSERT da baixa viola a FK baixas → contas (23503): conta não encontrada, nada gravado.
+        Assert.Equal(GravacaoDaConta.ContaNaoEncontrada, await repositorioDoPagamento.SalvarAsync(CancellationToken.None));
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"{Contas}/{conta.Id}")).StatusCode);
+        await using var conferir = factory.Services.CreateAsyncScope();
+        var db = conferir.ServiceProvider.GetRequiredService<Impa.Modules.Financeiro.Infrastructure.Persistence.FinanceiroDbContext>();
+        Assert.False(await db.Baixas.AnyAsync(b => b.ContaId == conta.Id));
+    }
+
+    [Fact]
+    public async Task Forma_excluida_entre_a_validacao_e_a_gravacao_nao_grava_o_pagamento()
+    {
+        var admin = await AdminAsync();
+        var conta = await ContaAsync(admin, "Frete novembro", "Compra de mercadorias", 80m);
+        await using var escopo = factory.Services.CreateAsyncScope();
+        var repositorio = escopo.ServiceProvider.GetRequiredService<IContasRepository>();
+
+        // Uma forma que não existe mais na gravação: a FK baixas → formas_pagamento recusa (23503).
+        var lida = (await repositorio.ObterAsync(conta.Id, CancellationToken.None))!;
+        lida.Pagar(new DateOnly(2026, 11, 5), 80m, Guid.CreateVersion7(), DateTimeOffset.UtcNow);
+
+        Assert.Equal(GravacaoDaConta.FormaDePagamentoNaoEncontrada, await repositorio.SalvarAsync(CancellationToken.None));
+        var final = await ObterAsync(admin, conta.Id);
+        Assert.Equal((80m, "sem-pagamento", 0), (final.Saldo, final.SituacaoDoPagamento, final.Baixas.Count));
+    }
+
+    // ---- RN-23.4 (CA-3) ----
+
+    [Fact]
+    public async Task RN_23_4_formas_de_pagamento_financeiras_cadastradas()
+    {
+        var admin = await AdminAsync();
+        var nomes = (await ListaAsync<FormaDePagamentoDto>(admin, $"{Formas}?incluirInativas=true")).Select(f => f.Nome).ToHashSet();
+        Assert.Subset(nomes, new HashSet<string> { "Dinheiro", "Pix", "Boleto", "Transferência" });
+
+        var criada = await admin.PostAsync(Formas, new { nome = "Cartão corporativo" });
+        Assert.Equal(HttpStatusCode.Created, criada.StatusCode);
+        var cartao = (await criada.Content.ReadFromJsonAsync<FormaDePagamentoDto>())!;
+        var repetida = await admin.PostAsync(Formas, new { nome = "pix" });
+        Assert.Equal(HttpStatusCode.Conflict, repetida.StatusCode);
+        Assert.Equal("Já existe a forma de pagamento Pix", (await repetida.Content.ReadFromJsonAsync<ErroResposta>())!.Mensagem);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsync(Formas, new { nome = " " })).StatusCode);
+
+        // Com pagamento, a forma não é excluída, só inativada; inativa, não aceita pagamento novo.
+        var conta = await ContaAsync(admin, "Manutenção do site", "Internet", 90m);
+        Assert.Equal(HttpStatusCode.Created, (await PagarAsync(admin, conta.Id, 40m, "2026-11-05", cartao.Id)).StatusCode);
+        var excluir = await admin.DeleteAsync($"{Formas}/{cartao.Id}");
+        Assert.Equal(HttpStatusCode.Conflict, excluir.StatusCode);
+        Assert.Equal("Esta forma de pagamento tem pagamentos. Você pode inativá-la", (await excluir.Content.ReadFromJsonAsync<ErroResposta>())!.Mensagem);
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.PostAsync($"{Formas}/{cartao.Id}/inativar")).StatusCode);
+        Assert.DoesNotContain(await ListaAsync<FormaDePagamentoDto>(admin, Formas), f => f.Id == cartao.Id);
+        var naInativa = await PagarAsync(admin, conta.Id, 10m, "2026-11-06", cartao.Id);
+        var erro = JsonDocument.Parse(await naInativa.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("Forma de pagamento inativa", erro.GetProperty("FormaDePagamentoId")[0].GetString());
+        // A baixa continua mostrando o nome da forma inativa.
+        Assert.Equal("Cartão corporativo", (await ObterAsync(admin, conta.Id)).Baixas.Single().FormaDePagamento);
+
+        var temporaria = (await (await admin.PostAsync(Formas, new { nome = "Cheque" })).Content.ReadFromJsonAsync<FormaDePagamentoDto>())!;
+        var renomeada = await admin.PutAsync($"{Formas}/{temporaria.Id}", new { nome = "Cheque nominal" });
+        Assert.Equal("Cheque nominal", (await renomeada.Content.ReadFromJsonAsync<FormaDePagamentoDto>())!.Nome);
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"{Formas}/{temporaria.Id}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task RN_23_4_nome_da_forma_unico_sem_diferenciar_maiusculas_tambem_no_banco()
+    {
+        _ = factory.CriarCliente(); // Host no ar: migrações e seed ("Pix" já existe)
+        await using var escopo = factory.Services.CreateAsyncScope();
+        var repositorio = escopo.ServiceProvider.GetRequiredService<IFormasDePagamentoRepository>();
+
+        Assert.False(await repositorio.AdicionarAsync(
+            Impa.Modules.Financeiro.Domain.FormaDePagamentoFinanceira.Criar("PIX", DateTimeOffset.UtcNow), CancellationToken.None));
+    }
+
+    // ---- Permissões: pagar e estornar com financeiro.editar (decisão de 07/11/2026) ----
+
+    [Fact]
+    public async Task Pagar_estornar_e_cadastrar_formas_so_com_financeiro_editar()
+    {
+        var admin = await AdminAsync();
+        Assert.Equal(HttpStatusCode.Created,
+            (await admin.PostAsync("/api/perfis", new { nome = "Consulta de pagamentos", permissoes = new[] { Permissoes.FinanceiroVer } })).StatusCode);
+        await factory.CriarUsuarioAsync("marta", "consulta-2026", "Marta", "Consulta de pagamentos");
+        var marta = await EntrarAsync("marta", "consulta-2026");
+        var conta = await ContaAsync(admin, "Energia novembro", "Energia", 280m);
+        var pix = await FormaAsync(admin, "Pix");
+        var baixa = (await (await PagarAsync(admin, conta.Id, 280m, "2026-11-05", pix)).Content.ReadFromJsonAsync<ContaDto>())!.Baixas.Single();
+
+        Assert.Equal(HttpStatusCode.OK, (await marta.GetAsync(Formas)).StatusCode);
+        Assert.Equal("paga", (await ObterAsync(marta, conta.Id)).SituacaoDoPagamento);
+        Assert.Equal(HttpStatusCode.Forbidden, (await PagarAsync(marta, conta.Id, 1m, "2026-11-05", pix)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await marta.PostAsync($"/api/financeiro/baixas/{baixa.Id}/estorno", new { motivo = "x" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await marta.PostAsync(Formas, new { nome = "Vale" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await marta.PutAsync($"{Formas}/{pix}", new { nome = "Pix" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await marta.PostAsync($"{Formas}/{pix}/inativar")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await marta.PostAsync($"{Formas}/{pix}/reativar")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await marta.DeleteAsync($"{Formas}/{pix}")).StatusCode);
+
+        // Sem sessão: 401 (a SPA aberta já tem o token XSRF, então a recusa é da autenticação).
+        var anonimo = await ClienteApi.AbrirAsync(factory);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await PagarAsync(anonimo, conta.Id, 1m, "2026-11-05", pix)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await anonimo.PostAsync($"/api/financeiro/baixas/{baixa.Id}/estorno", new { motivo = "x" })).StatusCode);
+
+        var depois = await ObterAsync(admin, conta.Id);
+        Assert.Equal(("paga", 1), (depois.SituacaoDoPagamento, depois.Baixas.Count(b => !b.Estornada)));
+        Assert.Contains(await ListaAsync<FormaDePagamentoDto>(admin, Formas), f => f.Id == pix);
+    }
+
+    [Fact]
+    public async Task Listar_formas_de_pagamento_exige_financeiro_ver_e_sessao()
+    {
+        _ = await AdminAsync();
+        await factory.CriarUsuarioAsync("rita", "balcao-2026", "Rita", PerfisPadrao.OperadorDeCaixa.Nome);
+        var rita = await EntrarAsync("rita", "balcao-2026");
+
+        // Operador de caixa: sem financeiro.ver.
+        Assert.Equal(HttpStatusCode.Forbidden, (await rita.GetAsync(Formas)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await rita.GetAsync($"{Formas}?incluirInativas=true")).StatusCode);
+
+        // Sem sessão: 401.
+        var anonimo = await ClienteApi.AbrirAsync(factory);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonimo.GetAsync(Formas)).StatusCode);
+    }
+
+    private static decimal Dec(string valor) => decimal.Parse(valor, System.Globalization.CultureInfo.InvariantCulture);
 }

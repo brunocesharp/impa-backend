@@ -1,6 +1,7 @@
 using Ardalis.Result;
 using FluentValidation;
 using Impa.Modules.Financeiro.Application.Categorias;
+using Impa.Modules.Financeiro.Application.FormasDePagamento;
 using Impa.Modules.Financeiro.Domain;
 using Impa.Modules.Pessoas.Contracts;
 using Impa.Shared;
@@ -34,7 +35,7 @@ public sealed record LancarContaCommand(
     string? NumeroDocumento,
     string? Observacao) : IRequest<Result<IReadOnlyList<ContaDto>>>, IDadosDaContaInformados;
 
-/// <summary>Altera uma parcela (conta sem pagamento, RN-23.7 — o pagamento chega na story 11.2).</summary>
+/// <summary>Altera uma parcela. Com pagamento, só descrição e observação podem mudar (RN-23.7).</summary>
 public sealed record AlterarContaCommand(
     Guid ContaId,
     string Descricao,
@@ -45,7 +46,7 @@ public sealed record AlterarContaCommand(
     string? NumeroDocumento,
     string? Observacao) : IRequest<Result<ContaDto>>, IDadosDaContaInformados;
 
-/// <summary>Exclui uma parcela (conta sem pagamento, RN-23.7).</summary>
+/// <summary>Exclui uma parcela; com pagamento, é recusado (RN-23.7).</summary>
 public sealed record ExcluirContaCommand(Guid ContaId) : IRequest<Result>;
 
 internal static class RegrasDaConta
@@ -105,6 +106,25 @@ internal static class RegrasDaConta
         return (categoria, erro is null ? null : new ValidationError(nameof(IDadosDaContaInformados.CategoriaId), erro));
     }
 
+    /// <summary>
+    /// RN-23.7: os campos que o pedido muda numa conta com pagamento (categoria, valor, vencimento, fornecedor e número
+    /// do documento), um erro por campo. O fornecedor é comparado pelo CNPJ/CPF (só dígitos).
+    /// </summary>
+    public static ValidationError[] CamposTravados(Conta conta, IDadosDaContaInformados pedido)
+    {
+        var documento = Documento.EstaVazio(pedido.FornecedorDocumento) ? null : Documento.SomenteDigitos(pedido.FornecedorDocumento);
+        var dados = new DadosDaConta(
+            pedido.Descricao, pedido.CategoriaId, pedido.Valor, pedido.Vencimento ?? default,
+            documento is null ? null : new FornecedorDaConta(Guid.Empty, string.Empty, documento),
+            pedido.NumeroDocumento, pedido.Observacao);
+
+        return conta.CamposTravadosAlterados(dados)
+            .Select(campo => new ValidationError(
+                campo == nameof(DadosDaConta.Fornecedor) ? nameof(IDadosDaContaInformados.FornecedorDocumento) : campo,
+                MensagensFinanceiro.CampoTravadoPeloPagamento))
+            .ToArray();
+    }
+
     public static DadosDaConta Dados(IDadosDaContaInformados c, FornecedorDaConta? fornecedor) =>
         new(c.Descricao, c.CategoriaId, c.Valor, c.Vencimento!.Value, fornecedor, c.NumeroDocumento, c.Observacao);
 }
@@ -151,13 +171,18 @@ public sealed class LancarContaCommandHandler(
     }
 }
 
-public sealed class AlterarContaCommandHandler(IContasRepository contas, ICategoriasRepository categorias, IPessoasConsultas pessoas)
+public sealed class AlterarContaCommandHandler(
+    IContasRepository contas, ICategoriasRepository categorias, IFormasDePagamentoRepository formas, IPessoasConsultas pessoas)
     : IRequestHandler<AlterarContaCommand, Result<ContaDto>>
 {
     public async Task<Result<ContaDto>> Handle(AlterarContaCommand request, CancellationToken ct)
     {
         if (await contas.ObterAsync(request.ContaId, ct) is not { } conta)
             return Result<ContaDto>.NotFound(MensagensFinanceiro.ContaNaoEncontrada);
+
+        // RN-23.7: com pagamento, só descrição e observação mudam; os outros campos precisam vir como estão.
+        if (conta.TemPagamento && RegrasDaConta.CamposTravados(conta, request) is { Length: > 0 } travados)
+            return Result<ContaDto>.Invalid(travados);
 
         var (categoria, erroDaCategoria) = await RegrasDaConta.CategoriaAsync(categorias, request.CategoriaId, conta.CategoriaId, ct);
         // Mesmo documento já gravado: mantém o fornecedor atual sem procurar de novo no Pessoas (o CNPJ/CPF pode ter
@@ -172,11 +197,16 @@ public sealed class AlterarContaCommandHandler(IContasRepository contas, ICatego
             return Result<ContaDto>.Invalid(erros);
 
         conta.Alterar(RegrasDaConta.Dados(request, fornecedor));
-        await contas.SalvarAsync(ct);
-        return Result.Success(ContaDto.De(conta, categoria!.Nome));
+        if (await contas.SalvarAsync(ct) != GravacaoDaConta.Gravada)
+            return Result<ContaDto>.Conflict(MensagensFinanceiro.ContaAlteradaAoMesmoTempo);
+        return Result.Success(ContaDto.De(conta, categoria!.Nome, await NomesDasFormas.ListarAsync(formas, ct)));
     }
 }
 
+/// <summary>
+/// RN-23.7: conta com pagamento (baixa não estornada) não pode ser excluída. Sem pagamento, é excluída com as baixas
+/// estornadas que tiver.
+/// </summary>
 public sealed class ExcluirContaCommandHandler(IContasRepository contas) : IRequestHandler<ExcluirContaCommand, Result>
 {
     public async Task<Result> Handle(ExcluirContaCommand request, CancellationToken ct)
@@ -184,7 +214,12 @@ public sealed class ExcluirContaCommandHandler(IContasRepository contas) : IRequ
         if (await contas.ObterAsync(request.ContaId, ct) is not { } conta)
             return Result.NotFound(MensagensFinanceiro.ContaNaoEncontrada);
 
-        await contas.RemoverAsync(conta, ct);
+        if (conta.TemPagamento)
+            return Result.Conflict(MensagensFinanceiro.ContaComPagamento);
+
+        // Um pagamento gravado depois da leitura muda a versão da linha: a exclusão é recusada (409), e a baixa fica.
+        if (!await contas.RemoverAsync(conta, ct))
+            return Result.Conflict(MensagensFinanceiro.ContaAlteradaAoMesmoTempo);
         return Result.Success();
     }
 }

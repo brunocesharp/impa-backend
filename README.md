@@ -28,10 +28,10 @@ src/
         ├── Impa.Modules.Pessoas.Application/    # Casos de uso, busca (RN-14.3), exclusão só sem histórico (RN-14.4)
         ├── Impa.Modules.Pessoas.Infrastructure/ # PessoasDbContext, repositórios, migrações, DI
         └── Impa.Modules.Pessoas.Contracts/      # IPessoasConsultas (PDV, Compras, Financeiro) e a porta IHistoricoDaPessoa
-    └── Financeiro/                 # Contas a pagar (story 11-1) — schema `financeiro`
-        ├── Impa.Modules.Financeiro.Domain/         # CategoriaFinanceira, Conta, Parcelamento (RN-23.1 a RN-23.3)
+    └── Financeiro/                 # Contas a pagar (stories 11-1 e 11-2) — schema `financeiro`
+        ├── Impa.Modules.Financeiro.Domain/         # CategoriaFinanceira, Conta, Parcelamento, Baixa, FormaDePagamentoFinanceira (RN-23.1 a RN-23.5, RN-23.7)
         ├── Impa.Modules.Financeiro.Application/    # Casos de uso; implementa IHistoricoDaPessoa (fornecedor com conta)
-        ├── Impa.Modules.Financeiro.Infrastructure/ # FinanceiroDbContext, repositórios, migrações (com as categorias iniciais), DI
+        ├── Impa.Modules.Financeiro.Infrastructure/ # FinanceiroDbContext, repositórios, migrações (com as categorias e formas de pagamento iniciais), DI
         └── Impa.Modules.Financeiro.Contracts/      # Contrato público (ainda vazio)
 tests/
 ├── Impa.Architecture.Tests/        # Regras de dependência entre módulos e camadas
@@ -70,7 +70,7 @@ por `ISessaoService` (primitivas: buscar usuário, conferir senha, abrir/encerra
   | Funcionalidade | Permissão |
   |----------------|-----------|
   | Custo dos itens (campo nos DTOs de item, épico 3) | `catalogo.custo.ver` (`ExigePermissao`) |
-  | Contas a pagar e financeiro (`/api/financeiro/categorias`, `/api/financeiro/contas`): consultar / lançar, alterar, excluir, pagar e estornar | `financeiro.ver` / `financeiro.editar` (+ `financeiro.ver`) |
+  | Contas a pagar e financeiro (`/api/financeiro/categorias`, `/api/financeiro/contas`, `/api/financeiro/contas/{id}/baixas`, `/api/financeiro/baixas/{id}/estorno`, `/api/financeiro/formas-pagamento`): consultar / lançar, alterar, excluir, pagar e estornar | `financeiro.ver` / `financeiro.editar` (+ `financeiro.ver`) |
   | Importação de planilhas | `importacao.executar` |
   | Alterar a configuração fiscal | `configuracao.fiscal` |
   | Ver a configuração (`GET /api/configuracao/empresa`) | `configuracao.ver` |
