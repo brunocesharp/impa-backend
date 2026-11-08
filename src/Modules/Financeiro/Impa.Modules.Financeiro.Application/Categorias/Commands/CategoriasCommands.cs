@@ -116,10 +116,9 @@ public sealed class ExcluirCategoriaCommandHandler(ICategoriasRepository categor
             return Result.NotFound(MensagensFinanceiro.CategoriaNaoEncontrada);
 
         // A chave estrangeira (ON DELETE RESTRICT) também recusa, se uma conta entrar entre a consulta e a exclusão.
-        if (await contas.ExisteDaCategoriaAsync(categoria.Id, ct))
+        if (await contas.ExisteDaCategoriaAsync(categoria.Id, ct) || !await categorias.RemoverAsync(categoria, ct))
             return Result.Conflict(MensagensFinanceiro.CategoriaComContas);
 
-        await categorias.RemoverAsync(categoria, ct);
         return Result.Success();
     }
 }

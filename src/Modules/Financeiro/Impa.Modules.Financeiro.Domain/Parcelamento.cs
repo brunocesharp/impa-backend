@@ -43,6 +43,8 @@ internal static class Valores
     {
         if (valor <= 0)
             throw new ArgumentException("O valor precisa ser maior que zero", nameof(valor));
+        if (valor > Conta.ValorMaximo)
+            throw new ArgumentException("O valor pode ser de no máximo R$ 999.999.999.999,99", nameof(valor));
         if (decimal.Round(valor, 2) != valor)
             throw new ArgumentException("O valor tem no máximo dois decimais", nameof(valor));
     }

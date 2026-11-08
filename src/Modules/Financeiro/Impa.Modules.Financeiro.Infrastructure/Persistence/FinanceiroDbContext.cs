@@ -24,7 +24,8 @@ public sealed class FinanceiroDbContext(DbContextOptions<FinanceiroDbContext> op
             b.Property(c => c.Nome).HasMaxLength(CategoriaFinanceira.NomeMaximo).IsRequired();
             b.Property(c => c.Ativa);
             b.Property(c => c.CriadaEm);
-            b.HasIndex(c => c.Nome).IsUnique().HasDatabaseName(IndicesUnicos.NomeDaCategoria);
+            // Nome único sem diferenciar maiúsculas: índice único sobre lower("Nome"), criado por SQL na migração
+            // NomeDaCategoriaSemMaiusculas (o EF não mapeia índice por expressão).
 
             // RN-23.1: os exemplos da regra já vêm cadastrados (o administrador pode renomear, inativar ou excluir).
             b.HasData(CategoriasIniciais.Todas.Select(c => new

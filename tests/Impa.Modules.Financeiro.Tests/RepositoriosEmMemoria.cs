@@ -28,10 +28,15 @@ internal sealed class CategoriasEmMemoria : ICategoriasRepository
 
     public Task<bool> SalvarAsync(CancellationToken ct) => Task.FromResult(true);
 
-    public Task RemoverAsync(CategoriaFinanceira categoria, CancellationToken ct)
+    /// <summary>Simula a chave estrangeira recusando a exclusão (23503).</summary>
+    public bool RecusarRemocao { get; set; }
+
+    public Task<bool> RemoverAsync(CategoriaFinanceira categoria, CancellationToken ct)
     {
+        if (RecusarRemocao)
+            return Task.FromResult(false);
         Itens.Remove(categoria);
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 }
 
@@ -75,6 +80,12 @@ internal sealed class PessoasFixas : IPessoasConsultas
 
     public Task<ClienteResumo?> ObterClienteAsync(Guid clienteId, CancellationToken ct) => Task.FromResult<ClienteResumo?>(null);
 
-    public Task<FornecedorResumo?> ObterFornecedorPorDocumentoAsync(string documento, CancellationToken ct) =>
-        Task.FromResult(Fornecedores.FirstOrDefault(f => f.Documento == Impa.Shared.Documento.SomenteDigitos(documento)));
+    /// <summary>Quantas vezes o fornecedor foi procurado pelo documento.</summary>
+    public int Consultas { get; set; }
+
+    public Task<FornecedorResumo?> ObterFornecedorPorDocumentoAsync(string documento, CancellationToken ct)
+    {
+        Consultas++;
+        return Task.FromResult(Fornecedores.FirstOrDefault(f => f.Documento == Impa.Shared.Documento.SomenteDigitos(documento)));
+    }
 }

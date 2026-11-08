@@ -31,6 +31,15 @@ public sealed class Conta
     public const int FornecedorNomeMaximo = 150;
     public const int FornecedorDocumentoMaximo = 14;
 
+    /// <summary>O maior valor que cabe na coluna <c>numeric(14,2)</c>.</summary>
+    public const decimal ValorMaximo = 999_999_999_999.99m;
+
+    /// <summary>Faixa aceita para o vencimento (barra erro de digitação e o estouro de datas).</summary>
+    public const int AnoMinimo = 2000;
+    public const int AnoMaximo = 2100;
+
+    public static bool VencimentoNaFaixa(DateOnly vencimento) => vencimento.Year is >= AnoMinimo and <= AnoMaximo;
+
     private Conta()
     {
         Descricao = string.Empty;
@@ -103,6 +112,8 @@ public sealed class Conta
         if (dados.CategoriaId == Guid.Empty)
             throw new ArgumentException("A categoria da conta é obrigatória", nameof(dados));
         Valores.ExigirValor(dados.Valor);
+        if (!VencimentoNaFaixa(dados.Vencimento))
+            throw new ArgumentException($"O vencimento precisa estar entre {AnoMinimo} e {AnoMaximo}", nameof(dados));
     }
 
     private void Aplicar(DadosDaConta dados)

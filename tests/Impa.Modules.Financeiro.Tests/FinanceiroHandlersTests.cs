@@ -117,6 +117,51 @@ public class FinanceiroHandlersTests
         Assert.Equal(("Parcelas", mensagem), (erro.Identifier, erro.ErrorMessage));
     }
 
+    [Theory]
+    [InlineData("999999999999.99", null)]
+    [InlineData("1000000000000.00", "O valor pode ser de no máximo R$ 999.999.999.999,99")]
+    [InlineData("79228162514264337593543950335", "O valor pode ser de no máximo R$ 999.999.999.999,99")]
+    public async Task RN_23_2_valor_cabe_na_coluna_numeric_14_2(string valor, string? mensagem)
+    {
+        var comando = Lancamento(Guid.CreateVersion7(), decimal.Parse(valor, System.Globalization.CultureInfo.InvariantCulture), 1);
+
+        var lancar = await ValidarAsync(new LancarContaCommandValidator(), comando);
+        var alterar = await ValidarAsync(new AlterarContaCommandValidator(), Alteracao(comando));
+
+        foreach (var erros in new[] { lancar, alterar })
+        {
+            if (mensagem is null)
+                Assert.Empty(erros);
+            else
+                Assert.Equal(("Valor", mensagem), (Assert.Single(erros).Identifier, Assert.Single(erros).ErrorMessage));
+        }
+    }
+
+    [Theory]
+    [InlineData(2000, 1, 1, null)]
+    [InlineData(2100, 12, 31, null)]
+    [InlineData(1999, 12, 31, "Informe um vencimento entre 2000 e 2100")]
+    [InlineData(2101, 1, 1, "Informe um vencimento entre 2000 e 2100")]
+    [InlineData(9999, 12, 31, "Informe um vencimento entre 2000 e 2100")]
+    public async Task RN_23_2_vencimento_entre_2000_e_2100(int ano, int mes, int dia, string? mensagem)
+    {
+        var comando = Lancamento(Guid.CreateVersion7(), parcelas: 120) with { Vencimento = new DateOnly(ano, mes, dia) };
+
+        var lancar = await ValidarAsync(new LancarContaCommandValidator(), comando);
+        var alterar = await ValidarAsync(new AlterarContaCommandValidator(), Alteracao(comando));
+
+        foreach (var erros in new[] { lancar, alterar })
+        {
+            if (mensagem is null)
+                Assert.Empty(erros);
+            else
+                Assert.Equal(("Vencimento", mensagem), (Assert.Single(erros).Identifier, Assert.Single(erros).ErrorMessage));
+        }
+    }
+
+    private static AlterarContaCommand Alteracao(LancarContaCommand c) =>
+        new(Guid.CreateVersion7(), c.Descricao, c.CategoriaId, c.Valor, c.Vencimento, c.FornecedorDocumento, c.NumeroDocumento, c.Observacao);
+
     [Fact]
     public async Task Parcela_de_menos_de_um_centavo_e_recusada()
     {
@@ -195,6 +240,37 @@ public class FinanceiroHandlersTests
 
         Assert.Equal(ResultStatus.Ok, mesma.Status);
         Assert.Equal("Categoria inativa", outra.ValidationErrors.Single().ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Alterar_com_o_mesmo_documento_mantem_o_fornecedor_sem_buscar_no_Pessoas()
+    {
+        var categoria = await CategoriaAsync("Compra de mercadorias");
+        var conta = Assert.Single((await LancarAsync(Lancamento(categoria.Id, 500m, 1))).Value);
+        // O fornecedor corrigiu o CNPJ no Pessoas: o documento gravado na conta não acha mais ninguém.
+        _pessoas.Fornecedores.Clear();
+        _pessoas.Consultas = 0;
+
+        var alterada = await new AlterarContaCommandHandler(_contas, _categorias, _pessoas).Handle(
+            new AlterarContaCommand(conta.Id, "Mochilas", categoria.Id, 500m, conta.Vencimento, "11222333000181", null, null),
+            CancellationToken.None);
+
+        Assert.Equal(ResultStatus.Ok, alterada.Status);
+        Assert.Equal(new FornecedorDaContaDto(_alfa.Id, "Distribuidora Alfa", CnpjAlfa), alterada.Value.Fornecedor);
+        Assert.Equal(0, _pessoas.Consultas);
+    }
+
+    [Fact]
+    public async Task Excluir_categoria_recusada_pelo_banco_numa_corrida_da_409()
+    {
+        var limpeza = await CategoriaAsync("Limpeza");
+        _categorias.RecusarRemocao = true; // a FK recusou: uma conta entrou depois da consulta
+
+        var resultado = await new ExcluirCategoriaCommandHandler(_categorias, _contas)
+            .Handle(new ExcluirCategoriaCommand(limpeza.Id), CancellationToken.None);
+
+        Assert.Equal(ResultStatus.Conflict, resultado.Status);
+        Assert.Equal("Esta categoria tem contas. Você pode inativá-la", Assert.Single(resultado.Errors));
     }
 
     [Fact]

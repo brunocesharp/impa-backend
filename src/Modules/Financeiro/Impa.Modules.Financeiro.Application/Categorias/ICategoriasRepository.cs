@@ -24,5 +24,6 @@ public interface ICategoriasRepository
     /// <summary>Falso quando o índice único do nome recusou.</summary>
     Task<bool> SalvarAsync(CancellationToken ct);
 
-    Task RemoverAsync(CategoriaFinanceira categoria, CancellationToken ct);
+    /// <summary>Falso quando a chave estrangeira recusou: a categoria ganhou contas depois da consulta (RN-23.1).</summary>
+    Task<bool> RemoverAsync(CategoriaFinanceira categoria, CancellationToken ct);
 }

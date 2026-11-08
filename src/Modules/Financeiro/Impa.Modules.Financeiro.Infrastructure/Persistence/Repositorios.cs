@@ -50,10 +50,20 @@ internal sealed class CategoriasRepository(FinanceiroDbContext db) : ICategorias
         }
     }
 
-    public async Task RemoverAsync(CategoriaFinanceira categoria, CancellationToken ct)
+    /// <summary>A FK das contas (ON DELETE RESTRICT) recusou (23503): desfaz o rastreamento e devolve falso.</summary>
+    public async Task<bool> RemoverAsync(CategoriaFinanceira categoria, CancellationToken ct)
     {
         db.Categorias.Remove(categoria);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
+        {
+            db.ChangeTracker.Clear();
+            return false;
+        }
     }
 }
 

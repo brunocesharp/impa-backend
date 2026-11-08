@@ -6,6 +6,7 @@ using Impa.Modules.Acesso.Contracts;
 using Impa.Modules.Financeiro.Application.Categorias;
 using Impa.Modules.Financeiro.Application.Contas;
 using Impa.Modules.Pessoas.Application.Fornecedores;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Impa.Api.IntegrationTests;
 
@@ -168,7 +169,90 @@ public class FinanceiroTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFact
         Assert.Equal(HttpStatusCode.NotFound, (await admin.DeleteAsync($"{Contas}/{parcelas[2].Id}")).StatusCode);
     }
 
+    [Fact]
+    public async Task RN_23_2_alterar_com_corpo_invalido_da_400_com_as_mensagens_por_campo()
+    {
+        var admin = await AdminAsync();
+        var aluguel = (await ListaAsync<CategoriaDto>(admin, Categorias)).Single(c => c.Nome == "Aluguel");
+        var conta = (await (await LancarAsync(admin, "Aluguel janeiro", aluguel.Id, 2000m, "2027-01-10"))
+            .Content.ReadFromJsonAsync<List<ContaDto>>())!.Single();
+
+        var resposta = await admin.PutAsync($"{Contas}/{conta.Id}", new { descricao = " ", valor = 0 });
+
+        Assert.Equal(HttpStatusCode.BadRequest, resposta.StatusCode);
+        var erros = JsonDocument.Parse(await resposta.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("Informe a descrição", erros.GetProperty("Descricao")[0].GetString());
+        Assert.Equal("Informe a categoria", erros.GetProperty("CategoriaId")[0].GetString());
+        Assert.Equal("O valor precisa ser maior que zero", erros.GetProperty("Valor")[0].GetString());
+        Assert.Equal("Informe o vencimento", erros.GetProperty("Vencimento")[0].GetString());
+    }
+
+    [Fact]
+    public async Task RN_23_2_valor_e_vencimento_fora_da_faixa_dao_400_no_campo()
+    {
+        var admin = await AdminAsync();
+        var impostos = (await ListaAsync<CategoriaDto>(admin, Categorias)).Single(c => c.Nome == "Impostos");
+
+        var noTeto = await LancarAsync(admin, "Imposto no teto", impostos.Id, 999_999_999_999.99m, "2100-12-31");
+        Assert.Equal(HttpStatusCode.Created, noTeto.StatusCode);
+
+        var acimaDoTeto = await LancarAsync(admin, "Imposto acima do teto", impostos.Id, 1_000_000_000_000m, "2027-01-10");
+        Assert.Equal(HttpStatusCode.BadRequest, acimaDoTeto.StatusCode);
+        var erroDoValor = JsonDocument.Parse(await acimaDoTeto.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("O valor pode ser de no máximo R$ 999.999.999.999,99", erroDoValor.GetProperty("Valor")[0].GetString());
+
+        var foraDaFaixa = await LancarAsync(admin, "Imposto em 9999", impostos.Id, 100m, "9999-12-31", 3);
+        Assert.Equal(HttpStatusCode.BadRequest, foraDaFaixa.StatusCode);
+        var erroDaData = JsonDocument.Parse(await foraDaFaixa.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.Equal("Informe um vencimento entre 2000 e 2100", erroDaData.GetProperty("Vencimento")[0].GetString());
+    }
+
+    [Fact]
+    public async Task RN_23_2_fornecedor_que_mudou_o_CNPJ_no_Pessoas_continua_na_conta_alterada()
+    {
+        var admin = await AdminAsync();
+        var delta = await FornecedorAsync(admin, "Distribuidora Delta", Cnpj("231000000004"));
+        var mercadorias = (await ListaAsync<CategoriaDto>(admin, Categorias)).Single(c => c.Nome == "Compra de mercadorias");
+        var conta = (await (await LancarAsync(admin, "Compra de cadernos", mercadorias.Id, 640m, "2027-02-05", fornecedorDocumento: delta.Documento))
+            .Content.ReadFromJsonAsync<List<ContaDto>>())!.Single();
+
+        // O CNPJ do fornecedor é corrigido no Pessoas.
+        var novoCnpj = Cnpj("231000000005");
+        var corrigido = await admin.PutAsync($"{Fornecedores}/{delta.Id}", new
+        {
+            razaoSocial = "Distribuidora Delta", documento = novoCnpj, nomeFantasia = (string?)null,
+            telefone = (string?)null, email = (string?)null, contato = (string?)null,
+        });
+        Assert.Equal(HttpStatusCode.OK, corrigido.StatusCode);
+
+        // A tela manda de volta o documento gravado na conta.
+        var alterada = await admin.PutAsync($"{Contas}/{conta.Id}", new
+        {
+            descricao = "Compra de cadernos e lápis", categoriaId = mercadorias.Id, valor = 640m, vencimento = "2027-02-05",
+            fornecedorDocumento = conta.Fornecedor!.Documento, numeroDocumento = (string?)null, observacao = (string?)null,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, alterada.StatusCode);
+        var obtida = (await (await admin.GetAsync($"{Contas}/{conta.Id}")).Content.ReadFromJsonAsync<ContaDto>())!;
+        Assert.Equal("Compra de cadernos e lápis", obtida.Descricao);
+        Assert.Equal(delta.Id, obtida.Fornecedor!.Id);
+    }
+
     // ---- RN-23.1 (CA-2) ----
+
+    [Fact]
+    public async Task RN_23_1_nome_da_categoria_unico_sem_diferenciar_maiusculas_tambem_no_banco()
+    {
+        _ = factory.CriarCliente(); // Host no ar: migrações e seed ("Energia" já existe)
+        await using var escopo = factory.Services.CreateAsyncScope();
+        var repositorio = escopo.ServiceProvider.GetRequiredService<ICategoriasRepository>();
+
+        // Direto pelo repositório, sem a consulta prévia do handler: quem recusa é o índice único.
+        Assert.False(await repositorio.AdicionarAsync(
+            Impa.Modules.Financeiro.Domain.CategoriaFinanceira.Criar("energia", DateTimeOffset.UtcNow), CancellationToken.None));
+        Assert.True(await repositorio.AdicionarAsync(
+            Impa.Modules.Financeiro.Domain.CategoriaFinanceira.Criar("Energia solar", DateTimeOffset.UtcNow), CancellationToken.None));
+    }
 
     [Fact]
     public async Task RN_23_1_exemplos_ja_cadastrados_e_categoria_com_contas_nao_e_excluida_so_inativada()

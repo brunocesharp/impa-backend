@@ -59,8 +59,12 @@ internal static class RegrasDaConta
         v.RuleFor(c => c.CategoriaId).NotEmpty().WithMessage("Informe a categoria");
         v.RuleFor(c => c.Valor)
             .GreaterThan(0).WithMessage("O valor precisa ser maior que zero")
+            .LessThanOrEqualTo(Conta.ValorMaximo).WithMessage("O valor pode ser de no máximo R$ 999.999.999.999,99")
             .Must(valor => decimal.Round(valor, 2) == valor).WithMessage("Use no máximo dois decimais no valor");
-        v.RuleFor(c => c.Vencimento).NotNull().WithMessage("Informe o vencimento");
+        v.RuleFor(c => c.Vencimento)
+            .NotNull().WithMessage("Informe o vencimento")
+            .Must(d => d is null || Conta.VencimentoNaFaixa(d.Value))
+            .WithMessage($"Informe um vencimento entre {Conta.AnoMinimo} e {Conta.AnoMaximo}");
         v.RuleFor(c => c.FornecedorDocumento)
             .Must(d => Documento.EstaVazio(d) || Documento.Erro(d) is null)
             .WithMessage((_, d) => Documento.Erro(d));
@@ -113,7 +117,8 @@ public sealed class LancarContaCommandValidator : AbstractValidator<LancarContaC
         RuleFor(c => c.Parcelas)
             .InclusiveBetween(1, Parcelamento.ParcelasMaximo)
             .WithMessage($"Informe de 1 a {Parcelamento.ParcelasMaximo} parcelas")
-            .Must((c, parcelas) => c.Valor <= 0 || c.Valor * 100 >= parcelas)
+            // Fora da faixa, o erro já fica no Valor (e Valor * 100 não estoura).
+            .Must((c, parcelas) => c.Valor <= 0 || c.Valor > Conta.ValorMaximo || c.Valor * 100 >= parcelas)
             .WithMessage("Cada parcela precisa ser de pelo menos R$ 0,01");
     }
 }
@@ -155,7 +160,13 @@ public sealed class AlterarContaCommandHandler(IContasRepository contas, ICatego
             return Result<ContaDto>.NotFound(MensagensFinanceiro.ContaNaoEncontrada);
 
         var (categoria, erroDaCategoria) = await RegrasDaConta.CategoriaAsync(categorias, request.CategoriaId, conta.CategoriaId, ct);
-        var (fornecedor, erroDoFornecedor) = await RegrasDaConta.FornecedorAsync(pessoas, request.FornecedorDocumento, ct);
+        // Mesmo documento já gravado: mantém o fornecedor atual sem procurar de novo no Pessoas (o CNPJ/CPF pode ter
+        // sido corrigido lá depois do lançamento).
+        var (fornecedor, erroDoFornecedor) = conta.FornecedorId is { } fornecedorAtual
+                                             && !Documento.EstaVazio(request.FornecedorDocumento)
+                                             && Documento.SomenteDigitos(request.FornecedorDocumento) == conta.FornecedorDocumento
+            ? (new FornecedorDaConta(fornecedorAtual, conta.FornecedorNome!, conta.FornecedorDocumento!), (ValidationError?)null)
+            : await RegrasDaConta.FornecedorAsync(pessoas, request.FornecedorDocumento, ct);
         ValidationError[] erros = [.. new[] { erroDaCategoria, erroDoFornecedor }.OfType<ValidationError>()];
         if (erros.Length > 0)
             return Result<ContaDto>.Invalid(erros);

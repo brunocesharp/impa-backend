@@ -41,10 +41,6 @@ namespace Impa.Modules.Financeiro.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Nome")
-                        .IsUnique()
-                        .HasDatabaseName("ux_categorias_nome");
-
                     b.ToTable("categorias", "financeiro");
 
                     b.HasData(
