@@ -6,7 +6,7 @@ using Impa.Modules.Financeiro.Application.FormasDePagamento;
 using Impa.Modules.Financeiro.Domain;
 using MediatR;
 
-namespace Impa.Modules.Financeiro.Application.Baixas;
+namespace Impa.Modules.Financeiro.Application.Baixas.Commands;
 
 /// <summary>
 /// Registra o pagamento total ou parcial de uma conta (RN-23.5, cenário 23.2): data, valor (&gt; 0 e no máximo o saldo)
@@ -79,8 +79,14 @@ public sealed class PagarContaCommandHandler(
             return Result<ContaDto>.Invalid(erros);
 
         conta.Pagar(request.Data!.Value, request.Valor, forma!.Id, relogio.GetUtcNow());
-        if (!await contas.SalvarAsync(ct))
-            return Result<ContaDto>.Conflict(MensagensFinanceiro.ContaAlteradaAoMesmoTempo);
+        switch (await contas.SalvarAsync(ct))
+        {
+            case GravacaoDaConta.AlteradaAoMesmoTempo:
+                return Result<ContaDto>.Conflict(MensagensFinanceiro.ContaAlteradaAoMesmoTempo);
+            case GravacaoDaConta.FormaDePagamentoNaoEncontrada: // excluída entre a validação e a gravação
+                return Result<ContaDto>.Invalid(new ValidationError(
+                    nameof(PagarContaCommand.FormaDePagamentoId), MensagensFinanceiro.FormaDePagamentoNaoEncontrada));
+        }
 
         return Result.Created(ContaDto.De(
             conta, await CategoriasDasContas.NomeAsync(categorias, conta.CategoriaId, ct), await NomesDasFormas.ListarAsync(formas, ct)));
@@ -100,7 +106,7 @@ public sealed class EstornarBaixaCommandHandler(
             return Result<ContaDto>.Conflict(MensagensFinanceiro.PagamentoJaEstornado);
 
         conta.Estornar(request.BaixaId, request.Motivo, new UsuarioDoEstorno(request.UsuarioId, request.UsuarioNome), relogio.GetUtcNow());
-        if (!await contas.SalvarAsync(ct))
+        if (await contas.SalvarAsync(ct) != GravacaoDaConta.Gravada)
             return Result<ContaDto>.Conflict(MensagensFinanceiro.ContaAlteradaAoMesmoTempo);
 
         return Result.Success(ContaDto.De(

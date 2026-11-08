@@ -95,16 +95,32 @@ public interface IContasRepository
     /// <summary>Grava as parcelas de um lançamento juntas (tudo ou nada).</summary>
     Task AdicionarAsync(IReadOnlyList<Conta> contas, CancellationToken ct);
 
-    /// <summary>Falso quando outra operação mudou a conta depois da leitura (versão da linha); nada é gravado.</summary>
-    Task<bool> SalvarAsync(CancellationToken ct);
+    /// <summary>
+    /// Grava as mudanças da conta. Nada é gravado quando outra operação mudou a conta depois da leitura (versão da
+    /// linha) ou quando a forma de pagamento de uma baixa nova foi excluída entre a validação e a gravação (FK).
+    /// </summary>
+    Task<GravacaoDaConta> SalvarAsync(CancellationToken ct);
 
     Task<bool> ExisteBaixaDaFormaAsync(Guid formaDePagamentoId, CancellationToken ct);
 
-    Task RemoverAsync(Conta conta, CancellationToken ct);
+    /// <summary>Falso quando outra operação mudou a conta depois da leitura (versão da linha); nada é excluído.</summary>
+    Task<bool> RemoverAsync(Conta conta, CancellationToken ct);
 
     Task<bool> ExisteDaCategoriaAsync(Guid categoriaId, CancellationToken ct);
 
     Task<bool> ExisteDoFornecedorAsync(Guid fornecedorId, CancellationToken ct);
+}
+
+/// <summary>Resultado de <see cref="IContasRepository.SalvarAsync"/>.</summary>
+public enum GravacaoDaConta
+{
+    Gravada,
+
+    /// <summary>A versão da linha mudou desde a leitura (409 "A conta foi alterada em outra operação…").</summary>
+    AlteradaAoMesmoTempo,
+
+    /// <summary>A FK baixas → formas_pagamento recusou (23503): a forma foi excluída depois da validação.</summary>
+    FormaDePagamentoNaoEncontrada,
 }
 
 /// <summary>Categorias que o handler já leu (nome para a resposta).</summary>

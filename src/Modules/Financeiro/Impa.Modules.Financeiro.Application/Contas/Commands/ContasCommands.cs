@@ -197,7 +197,7 @@ public sealed class AlterarContaCommandHandler(
             return Result<ContaDto>.Invalid(erros);
 
         conta.Alterar(RegrasDaConta.Dados(request, fornecedor));
-        if (!await contas.SalvarAsync(ct))
+        if (await contas.SalvarAsync(ct) != GravacaoDaConta.Gravada)
             return Result<ContaDto>.Conflict(MensagensFinanceiro.ContaAlteradaAoMesmoTempo);
         return Result.Success(ContaDto.De(conta, categoria!.Nome, await NomesDasFormas.ListarAsync(formas, ct)));
     }
@@ -217,7 +217,9 @@ public sealed class ExcluirContaCommandHandler(IContasRepository contas) : IRequ
         if (conta.TemPagamento)
             return Result.Conflict(MensagensFinanceiro.ContaComPagamento);
 
-        await contas.RemoverAsync(conta, ct);
+        // Um pagamento gravado depois da leitura muda a versão da linha: a exclusão é recusada (409), e a baixa fica.
+        if (!await contas.RemoverAsync(conta, ct))
+            return Result.Conflict(MensagensFinanceiro.ContaAlteradaAoMesmoTempo);
         return Result.Success();
     }
 }

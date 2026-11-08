@@ -1,9 +1,11 @@
 using Ardalis.Result;
 using FluentValidation;
-using Impa.Modules.Financeiro.Application.Baixas;
+using Impa.Modules.Financeiro.Application.Baixas.Commands;
 using Impa.Modules.Financeiro.Application.Contas;
 using Impa.Modules.Financeiro.Application.Contas.Commands;
 using Impa.Modules.Financeiro.Application.FormasDePagamento;
+using Impa.Modules.Financeiro.Application.FormasDePagamento.Commands;
+using Impa.Modules.Financeiro.Application.FormasDePagamento.Queries;
 using Impa.Modules.Financeiro.Domain;
 
 namespace Impa.Modules.Financeiro.Tests;
@@ -101,6 +103,61 @@ public class BaixasHandlersTests
         var resultado = await PagarAsync(conta.Id, 10m);
         Assert.Equal(ResultStatus.Conflict, resultado.Status);
         Assert.Equal("A conta foi alterada em outra operação. Atualize e tente de novo", Assert.Single(resultado.Errors));
+    }
+
+    [Fact]
+    public async Task Forma_excluida_entre_a_validacao_e_a_gravacao_e_recusada_com_400()
+    {
+        var conta = ContaDe(500m);
+        _contas.FormaExcluidaNaGravacao = true;
+
+        var resultado = await PagarAsync(conta.Id, 10m);
+
+        Assert.Equal(ResultStatus.Invalid, resultado.Status);
+        var erro = Assert.Single(resultado.ValidationErrors);
+        Assert.Equal(("FormaDePagamentoId", "Forma de pagamento não encontrada"), (erro.Identifier, erro.ErrorMessage));
+    }
+
+    [Fact]
+    public async Task Estornar_com_gravacao_concorrente_409()
+    {
+        var conta = ContaDe(500m);
+        var baixa = (await PagarAsync(conta.Id, 200m)).Value.Baixas.Single();
+        _contas.RecusarGravacao = true;
+
+        var resultado = await Estornar().Handle(
+            new EstornarBaixaCommand(baixa.Id, "Duplicado", Guid.CreateVersion7(), "admin"), CancellationToken.None);
+
+        Assert.Equal(ResultStatus.Conflict, resultado.Status);
+        Assert.Equal("A conta foi alterada em outra operação. Atualize e tente de novo", Assert.Single(resultado.Errors));
+    }
+
+    [Fact]
+    public async Task Alterar_com_gravacao_concorrente_409()
+    {
+        var conta = ContaDe(500m);
+        _contas.RecusarGravacao = true;
+        var handler = new AlterarContaCommandHandler(_contas, _categorias, _formas, _pessoas);
+
+        var resultado = await handler.Handle(
+            new AlterarContaCommand(conta.Id, "Aluguel nov/26", _aluguel.Id, 500m, conta.Vencimento, null, "Recibo 11", null),
+            CancellationToken.None);
+
+        Assert.Equal(ResultStatus.Conflict, resultado.Status);
+        Assert.Equal("A conta foi alterada em outra operação. Atualize e tente de novo", Assert.Single(resultado.Errors));
+    }
+
+    [Fact]
+    public async Task Excluir_com_pagamento_gravado_depois_da_leitura_409()
+    {
+        var conta = ContaDe(500m);
+        _contas.RecusarRemocao = true;
+
+        var resultado = await new ExcluirContaCommandHandler(_contas).Handle(new ExcluirContaCommand(conta.Id), CancellationToken.None);
+
+        Assert.Equal(ResultStatus.Conflict, resultado.Status);
+        Assert.Equal("A conta foi alterada em outra operação. Atualize e tente de novo", Assert.Single(resultado.Errors));
+        Assert.Contains(conta, _contas.Itens);
     }
 
     [Theory]

@@ -4,7 +4,7 @@ using Impa.Modules.Financeiro.Application.Contas;
 using Impa.Modules.Financeiro.Domain;
 using MediatR;
 
-namespace Impa.Modules.Financeiro.Application.FormasDePagamento;
+namespace Impa.Modules.Financeiro.Application.FormasDePagamento.Commands;
 
 public interface INomeDaFormaDePagamento
 {
@@ -22,9 +22,6 @@ public sealed record ReativarFormaDePagamentoCommand(Guid FormaDePagamentoId) : 
 
 /// <summary>Forma com pagamentos não pode ser excluída, só inativada (a baixa guarda a forma usada).</summary>
 public sealed record ExcluirFormaDePagamentoCommand(Guid FormaDePagamentoId) : IRequest<Result>;
-
-/// <summary>Formas em ordem de nome; só as ativas, salvo <paramref name="IncluirInativas"/>.</summary>
-public sealed record ListarFormasDePagamentoQuery(bool IncluirInativas = false) : IRequest<Result<IReadOnlyList<FormaDePagamentoDto>>>;
 
 internal static class RegrasDaFormaDePagamento
 {
@@ -48,14 +45,6 @@ public sealed class CriarFormaDePagamentoCommandValidator : AbstractValidator<Cr
 public sealed class AlterarFormaDePagamentoCommandValidator : AbstractValidator<AlterarFormaDePagamentoCommand>
 {
     public AlterarFormaDePagamentoCommandValidator() => RegrasDaFormaDePagamento.Aplicar(this);
-}
-
-public sealed class ListarFormasDePagamentoQueryHandler(IFormasDePagamentoRepository formas)
-    : IRequestHandler<ListarFormasDePagamentoQuery, Result<IReadOnlyList<FormaDePagamentoDto>>>
-{
-    public async Task<Result<IReadOnlyList<FormaDePagamentoDto>>> Handle(ListarFormasDePagamentoQuery request, CancellationToken ct) =>
-        Result.Success<IReadOnlyList<FormaDePagamentoDto>>(
-            (await formas.ListarAsync(request.IncluirInativas, ct)).Select(FormaDePagamentoDto.De).ToList());
 }
 
 public sealed class CriarFormaDePagamentoCommandHandler(IFormasDePagamentoRepository formas, TimeProvider relogio)

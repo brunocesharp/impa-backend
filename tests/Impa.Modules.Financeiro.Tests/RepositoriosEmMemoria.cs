@@ -62,15 +62,26 @@ internal sealed class ContasEmMemoria : IContasRepository
     /// <summary>Simula outra operação mudando a conta entre a leitura e a gravação (versão da linha).</summary>
     public bool RecusarGravacao { get; set; }
 
-    public Task<bool> SalvarAsync(CancellationToken ct) => Task.FromResult(!RecusarGravacao);
+    /// <summary>Simula a FK da forma de pagamento recusando a baixa nova (forma excluída depois da validação).</summary>
+    public bool FormaExcluidaNaGravacao { get; set; }
+
+    public Task<GravacaoDaConta> SalvarAsync(CancellationToken ct) => Task.FromResult(
+        RecusarGravacao ? GravacaoDaConta.AlteradaAoMesmoTempo
+        : FormaExcluidaNaGravacao ? GravacaoDaConta.FormaDePagamentoNaoEncontrada
+        : GravacaoDaConta.Gravada);
 
     public Task<bool> ExisteBaixaDaFormaAsync(Guid formaDePagamentoId, CancellationToken ct) =>
         Task.FromResult(Itens.Any(c => c.Baixas.Any(b => b.FormaDePagamentoId == formaDePagamentoId)));
 
-    public Task RemoverAsync(Conta conta, CancellationToken ct)
+    /// <summary>Simula outra operação mudando a conta entre a leitura e a exclusão (versão da linha).</summary>
+    public bool RecusarRemocao { get; set; }
+
+    public Task<bool> RemoverAsync(Conta conta, CancellationToken ct)
     {
+        if (RecusarRemocao)
+            return Task.FromResult(false);
         Itens.Remove(conta);
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     public Task<bool> ExisteDaCategoriaAsync(Guid categoriaId, CancellationToken ct) =>

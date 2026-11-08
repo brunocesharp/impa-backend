@@ -87,9 +87,38 @@ internal sealed class ContasRepository(FinanceiroDbContext db) : IContasReposito
         await db.SaveChangesAsync(ct); // um SaveChanges = uma transação: todas as parcelas ou nenhuma
     }
 
-    /// <summary>A versão da linha (xmin) mudou desde a leitura: desfaz o rastreamento e devolve falso.</summary>
-    public async Task<bool> SalvarAsync(CancellationToken ct)
+    /// <summary>
+    /// A versão da linha (xmin) mudou desde a leitura, ou a FK da forma de pagamento recusou a baixa nova (23503):
+    /// desfaz o rastreamento para o contexto seguir utilizável.
+    /// </summary>
+    public async Task<GravacaoDaConta> SalvarAsync(CancellationToken ct)
     {
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return GravacaoDaConta.Gravada;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            return GravacaoDaConta.AlteradaAoMesmoTempo;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+                                           { SqlState: PostgresErrorCodes.ForeignKeyViolation } pg
+                                           && pg.ConstraintName == ChavesEstrangeiras.FormaDePagamentoDaBaixa)
+        {
+            db.ChangeTracker.Clear();
+            return GravacaoDaConta.FormaDePagamentoNaoEncontrada;
+        }
+    }
+
+    public Task<bool> ExisteBaixaDaFormaAsync(Guid formaDePagamentoId, CancellationToken ct) =>
+        db.Baixas.AnyAsync(b => b.FormaDePagamentoId == formaDePagamentoId, ct);
+
+    /// <summary>A versão da linha (xmin) também entra no DELETE: mudou desde a leitura → desfaz o rastreamento e devolve falso.</summary>
+    public async Task<bool> RemoverAsync(Conta conta, CancellationToken ct)
+    {
+        db.Contas.Remove(conta);
         try
         {
             await db.SaveChangesAsync(ct);
@@ -100,15 +129,6 @@ internal sealed class ContasRepository(FinanceiroDbContext db) : IContasReposito
             db.ChangeTracker.Clear();
             return false;
         }
-    }
-
-    public Task<bool> ExisteBaixaDaFormaAsync(Guid formaDePagamentoId, CancellationToken ct) =>
-        db.Baixas.AnyAsync(b => b.FormaDePagamentoId == formaDePagamentoId, ct);
-
-    public async Task RemoverAsync(Conta conta, CancellationToken ct)
-    {
-        db.Contas.Remove(conta);
-        await db.SaveChangesAsync(ct);
     }
 
     public Task<bool> ExisteDaCategoriaAsync(Guid categoriaId, CancellationToken ct) =>

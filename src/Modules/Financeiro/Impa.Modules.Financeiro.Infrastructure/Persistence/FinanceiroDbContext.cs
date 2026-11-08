@@ -130,6 +130,12 @@ internal static class IndicesUnicos
     public const string NomeDaFormaDePagamento = "ux_formas_pagamento_nome";
 }
 
+internal static class ChavesEstrangeiras
+{
+    /// <summary>Nome gerado pelo EF na migração BaixasEFormasDePagamento.</summary>
+    public const string FormaDePagamentoDaBaixa = "FK_baixas_formas_pagamento_FormaDePagamentoId";
+}
+
 /// <summary>Os exemplos da RN-23.4, com ids fixos (seed da migração).</summary>
 internal static class FormasDePagamentoIniciais
 {

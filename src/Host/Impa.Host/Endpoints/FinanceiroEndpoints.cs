@@ -2,7 +2,7 @@ using System.Security.Claims;
 using Impa.Host.Http;
 using Impa.Host.Seguranca;
 using Impa.Modules.Acesso.Contracts;
-using Impa.Modules.Financeiro.Application.Baixas;
+using Impa.Modules.Financeiro.Application.Baixas.Commands;
 using Impa.Modules.Financeiro.Application.Categorias;
 using Impa.Modules.Financeiro.Application.Categorias.Commands;
 using Impa.Modules.Financeiro.Application.Categorias.Queries;
@@ -10,6 +10,8 @@ using Impa.Modules.Financeiro.Application.Contas;
 using Impa.Modules.Financeiro.Application.Contas.Commands;
 using Impa.Modules.Financeiro.Application.Contas.Queries;
 using Impa.Modules.Financeiro.Application.FormasDePagamento;
+using Impa.Modules.Financeiro.Application.FormasDePagamento.Commands;
+using Impa.Modules.Financeiro.Application.FormasDePagamento.Queries;
 using MediatR;
 
 namespace Impa.Host.Endpoints;
