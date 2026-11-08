@@ -5,6 +5,7 @@
     <ProjectReference Include="..\..\Modules\Configuracao\Impa.Modules.Configuracao.Infrastructure\Impa.Modules.Configuracao.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Shared\Impa.Shared\Impa.Shared.csproj" />
     <ProjectReference Include="..\..\Modules\Pessoas\Impa.Modules.Pessoas.Infrastructure\Impa.Modules.Pessoas.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Financeiro\Impa.Modules.Financeiro.Infrastructure\Impa.Modules.Financeiro.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -29,6 +29,7 @@ public static class Permissoes
     public const string ClientesInativar = "clientes.inativar";
     public const string FornecedoresGerenciar = "fornecedores.gerenciar";
     public const string FinanceiroVer = "financeiro.ver";
+    public const string FinanceiroEditar = "financeiro.editar";
     public const string ImportacaoExecutar = "importacao.executar";
     public const string LiberarOperacoes = "liberar.operacoes";
 
@@ -63,6 +64,7 @@ public static class Permissoes
         new(FornecedoresGerenciar, GrupoFornecedores, "Gerenciar fornecedores"),
 
         new(FinanceiroVer, GrupoFinanceiro, "Contas a pagar e financeiro"),
+        new(FinanceiroEditar, GrupoFinanceiro, "Lançar, alterar, excluir, pagar e estornar contas"),
 
         new(ConfiguracaoVer, GrupoAdministracao, "Ver a configuração"),
         new(ConfiguracaoFiscal, GrupoAdministracao, "Alterar a configuração fiscal"),
