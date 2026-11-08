@@ -98,6 +98,7 @@ app.MapPessoasEndpoints();
 app.MapTerminaisEndpoints();
 app.MapMensageriaEndpoints();
 app.MapNotificacoesEndpoints();
+app.MapAuditoriaEndpoints();
 app.MapVersaoEndpoints();
 foreach (var adicionais in app.Services.GetServices<IEndpointsAdicionais>())
     adicionais.Mapear(app);

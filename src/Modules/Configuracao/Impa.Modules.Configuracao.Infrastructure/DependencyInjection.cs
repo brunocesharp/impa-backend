@@ -1,4 +1,7 @@
+using Impa.Modules.Configuracao.Application.Auditoria;
 using Impa.Modules.Configuracao.Application.Notificacoes;
+using Impa.Modules.Configuracao.Contracts.Auditoria;
+using Impa.Modules.Configuracao.Infrastructure.Auditoria;
 using Impa.Modules.Configuracao.Infrastructure.Notificacoes;
 using Impa.Modules.Configuracao.Infrastructure.Persistence;
 using Impa.Shared.Messaging;
@@ -15,7 +18,7 @@ public static class DependencyInjection
 
     /// <summary>
     /// Registra o módulo Configuração e Notificações: banco (schema <c>configuracao</c>, com Outbox e Inbox),
-    /// a central de notificações e a base dos handlers de fato. Depende de <c>IUsuariosComPermissao</c> (Acesso).
+    /// a central de notificações, a base dos handlers de fato e a auditoria das operações sensíveis. Depende de <c>IUsuariosComPermissao</c> (Acesso).
     /// </summary>
     public static IServiceCollection AddConfiguracaoModule(this IServiceCollection services, string connectionString)
     {
@@ -30,6 +33,10 @@ public static class DependencyInjection
         services.AddScoped<INotificacoes, RepositorioDeNotificacoes>();
         services.AddScoped<IEventosDaConfiguracao, EventosDaConfiguracao>();
         services.AddScoped<CriacaoDeNotificacoes>();
+
+        // Auditoria (story 4.4): cada módulo publica OperacaoSensivelAuditada no próprio Outbox; grava aqui, uma vez (Inbox).
+        services.AddScoped<IRegistrosDeAuditoria, RepositorioDeAuditoria>();
+        services.AddIntegrationEventHandler<OperacaoSensivelAuditada, GravarOperacaoSensivel, ConfiguracaoDbContext>(Consumidor);
 
         return services;
     }

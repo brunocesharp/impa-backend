@@ -1,3 +1,4 @@
+using Impa.Modules.Configuracao.Domain.Auditoria;
 using Impa.Modules.Configuracao.Domain.Notificacoes;
 using Impa.Shared.Messaging;
 using Microsoft.EntityFrameworkCore;
@@ -6,7 +7,8 @@ namespace Impa.Modules.Configuracao.Infrastructure.Persistence;
 
 /// <summary>
 /// Contexto do módulo Configuração e Notificações. Grava só no schema <c>configuracao</c> (ADR-001 / ADR-012),
-/// inclusive o Outbox (publica <c>NotificacaoCriada</c>) e o Inbox (consome os fatos que viram notificação).
+/// inclusive o Outbox (publica <c>NotificacaoCriada</c>) e o Inbox (consome os fatos que viram notificação e os
+/// eventos de auditoria).
 /// </summary>
 public sealed class ConfiguracaoDbContext(DbContextOptions<ConfiguracaoDbContext> options) : DbContext(options)
 {
@@ -17,6 +19,9 @@ public sealed class ConfiguracaoDbContext(DbContextOptions<ConfiguracaoDbContext
     public DbSet<NotificacaoDestinatario> NotificacoesDestinatarios => Set<NotificacaoDestinatario>();
 
     public DbSet<NotificacaoLida> NotificacoesLidas => Set<NotificacaoLida>();
+
+    /// <summary>Operações sensíveis (story 4.4), gravadas a partir do evento de auditoria de cada módulo.</summary>
+    public DbSet<RegistroDeAuditoria> Auditoria => Set<RegistroDeAuditoria>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -52,6 +57,29 @@ public sealed class ConfiguracaoDbContext(DbContextOptions<ConfiguracaoDbContext
             b.ToTable("notificacoes_lidas");
             b.HasKey(l => new { l.NotificacaoId, l.UsuarioId });
             b.HasIndex(l => l.UsuarioId);
+        });
+
+        // Auditoria (M1.6, story 4.4): id = id do evento; os campos alterados ficam num jsonb.
+        modelBuilder.Entity<RegistroDeAuditoria>(b =>
+        {
+            b.ToTable("auditoria");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.Id).ValueGeneratedNever();
+            b.Property(r => r.UsuarioNome).HasMaxLength(RegistroDeAuditoria.UsuarioNomeMaximo).IsRequired();
+            b.Property(r => r.Modulo).HasMaxLength(RegistroDeAuditoria.ModuloMaximo).IsRequired();
+            b.Property(r => r.Entidade).HasMaxLength(RegistroDeAuditoria.EntidadeMaxima).IsRequired();
+            b.Property(r => r.EntidadeId).HasMaxLength(RegistroDeAuditoria.EntidadeIdMaximo).IsRequired();
+            b.Property(r => r.Operacao).HasMaxLength(RegistroDeAuditoria.OperacaoMaxima).IsRequired();
+            b.HasIndex(r => r.OcorreuEm); // consulta por período, mais recentes primeiro
+            b.HasIndex(r => r.UsuarioId);
+            b.HasIndex(r => new { r.Modulo, r.Entidade });
+
+            b.OwnsMany(r => r.Campos, c =>
+            {
+                c.ToJson("campos");
+                c.Property(x => x.Campo).HasMaxLength(CampoAuditado.CampoMaximo);
+            });
+            b.Navigation(r => r.Campos).UsePropertyAccessMode(PropertyAccessMode.Field);
         });
 
         modelBuilder.MapearOutbox(Schema);

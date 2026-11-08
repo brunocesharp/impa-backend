@@ -31,9 +31,10 @@ public class PerfisPadraoTests
     }
 
     [Fact]
-    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_terminais_notificacoes_e_as_duas_da_3_7()
+    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_terminais_notificacoes_auditoria_e_as_duas_da_3_7()
     {
-        Assert.Equal(20, Permissoes.Todas.Count);
+        Assert.Equal(21, Permissoes.Todas.Count);
+        Assert.Contains("auditoria.ver", Permissoes.Todas); // story 4.4
         Assert.Contains("notificacoes.receber", Permissoes.Todas); // story 4.2
         Assert.Contains("clientes.inativar", Permissoes.Todas); // story 3-7
         Assert.Contains("fornecedores.gerenciar", Permissoes.Todas); // story 3-7
@@ -42,6 +43,10 @@ public class PerfisPadraoTests
         Assert.Contains("perfis.gerenciar", Permissoes.Todas);
         Assert.Contains("terminais.gerenciar", Permissoes.Todas); // story 1-6
     }
+
+    [Fact]
+    public void Operador_de_caixa_nao_consulta_a_auditoria() =>
+        Assert.DoesNotContain(Permissoes.AuditoriaVer, PerfisPadrao.OperadorDeCaixa.Permissoes);
 
     [Fact]
     public void Operador_de_caixa_nao_gerencia_terminais() =>

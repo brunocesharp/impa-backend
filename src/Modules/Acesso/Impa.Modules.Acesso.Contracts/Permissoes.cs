@@ -35,6 +35,9 @@ public static class Permissoes
     /// <summary>RN-2.3: recebe as notificações dentro do sistema (story 4.2).</summary>
     public const string NotificacoesReceber = "notificacoes.receber";
 
+    /// <summary>M1.6: consulta a auditoria das operações sensíveis (story 4.4).</summary>
+    public const string AuditoriaVer = "auditoria.ver";
+
     private const string GrupoVendas = "Vendas e caixa";
     private const string GrupoCatalogo = "Catálogo";
     private const string GrupoClientes = "Clientes";
@@ -70,6 +73,7 @@ public static class Permissoes
         new(PerfisGerenciar, GrupoAdministracao, "Gerenciar perfis e permissões"),
         new(TerminaisGerenciar, GrupoAdministracao, "Registrar e revogar terminais"),
         new(NotificacoesReceber, GrupoAdministracao, "Receber notificações"),
+        new(AuditoriaVer, GrupoAdministracao, "Consultar a auditoria"),
     ];
 
     public static IReadOnlyList<string> Todas { get; } = Catalogo.Select(p => p.Codigo).ToArray();
