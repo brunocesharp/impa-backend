@@ -19,6 +19,10 @@ COPY src/Modules/Pessoas/Impa.Modules.Pessoas.Domain/*.csproj src/Modules/Pessoa
 COPY src/Modules/Pessoas/Impa.Modules.Pessoas.Contracts/*.csproj src/Modules/Pessoas/Impa.Modules.Pessoas.Contracts/
 COPY src/Modules/Pessoas/Impa.Modules.Pessoas.Application/*.csproj src/Modules/Pessoas/Impa.Modules.Pessoas.Application/
 COPY src/Modules/Pessoas/Impa.Modules.Pessoas.Infrastructure/*.csproj src/Modules/Pessoas/Impa.Modules.Pessoas.Infrastructure/
+COPY src/Modules/Financeiro/Impa.Modules.Financeiro.Domain/*.csproj src/Modules/Financeiro/Impa.Modules.Financeiro.Domain/
+COPY src/Modules/Financeiro/Impa.Modules.Financeiro.Contracts/*.csproj src/Modules/Financeiro/Impa.Modules.Financeiro.Contracts/
+COPY src/Modules/Financeiro/Impa.Modules.Financeiro.Application/*.csproj src/Modules/Financeiro/Impa.Modules.Financeiro.Application/
+COPY src/Modules/Financeiro/Impa.Modules.Financeiro.Infrastructure/*.csproj src/Modules/Financeiro/Impa.Modules.Financeiro.Infrastructure/
 COPY src/Host/Impa.Host/*.csproj src/Host/Impa.Host/
 RUN dotnet restore src/Host/Impa.Host/Impa.Host.csproj
 

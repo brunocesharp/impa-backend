@@ -1,5 +1,6 @@
 using Impa.Modules.Acesso.Infrastructure.Identity;
 using Impa.Modules.Acesso.Infrastructure.Persistence;
+using Impa.Modules.Financeiro.Infrastructure.Persistence;
 using Impa.Modules.Pessoas.Infrastructure.Persistence;
 using Impa.Modules.Configuracao.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,7 @@ public static class DatabaseMigrations
         await servicos.GetRequiredService<AcessoDbContext>().Database.MigrateAsync();
         await servicos.GetRequiredService<PessoasDbContext>().Database.MigrateAsync();
         await servicos.GetRequiredService<ConfiguracaoDbContext>().Database.MigrateAsync();
+        await servicos.GetRequiredService<FinanceiroDbContext>().Database.MigrateAsync();
 
         await AcessoSeed.ExecutarAsync(servicos, AdministradorInicialDaConfiguracao(app.Configuration));
     }

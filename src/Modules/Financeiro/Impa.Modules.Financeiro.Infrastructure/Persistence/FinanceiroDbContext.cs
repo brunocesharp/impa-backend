@@ -1,0 +1,82 @@
+using Impa.Modules.Financeiro.Domain;
+using Microsoft.EntityFrameworkCore;
+
+namespace Impa.Modules.Financeiro.Infrastructure.Persistence;
+
+/// <summary>Contexto do módulo Financeiro. Grava só no schema <c>financeiro</c> (ADR-001 / ADR-012).</summary>
+public sealed class FinanceiroDbContext(DbContextOptions<FinanceiroDbContext> options) : DbContext(options)
+{
+    public const string Schema = "financeiro";
+
+    public DbSet<CategoriaFinanceira> Categorias => Set<CategoriaFinanceira>();
+
+    public DbSet<Conta> Contas => Set<Conta>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.HasDefaultSchema(Schema);
+
+        modelBuilder.Entity<CategoriaFinanceira>(b =>
+        {
+            b.ToTable("categorias");
+            b.HasKey(c => c.Id);
+            b.Property(c => c.Id).ValueGeneratedNever();
+            b.Property(c => c.Nome).HasMaxLength(CategoriaFinanceira.NomeMaximo).IsRequired();
+            b.Property(c => c.Ativa);
+            b.Property(c => c.CriadaEm);
+            // Nome único sem diferenciar maiúsculas: índice único sobre lower("Nome"), criado por SQL na migração
+            // NomeDaCategoriaSemMaiusculas (o EF não mapeia índice por expressão).
+
+            // RN-23.1: os exemplos da regra já vêm cadastrados (o administrador pode renomear, inativar ou excluir).
+            b.HasData(CategoriasIniciais.Todas.Select(c => new
+            {
+                c.Id,
+                c.Nome,
+                Ativa = true,
+                CriadaEm = CategoriasIniciais.CriadaEm,
+            }));
+        });
+
+        modelBuilder.Entity<Conta>(b =>
+        {
+            b.ToTable("contas");
+            b.HasKey(c => c.Id);
+            b.Property(c => c.Id).ValueGeneratedNever();
+            b.Property(c => c.Descricao).HasMaxLength(Conta.DescricaoMaximo).IsRequired();
+            b.Property(c => c.Valor).HasPrecision(14, 2);
+            b.Property(c => c.Vencimento);
+            b.Property(c => c.FornecedorNome).HasMaxLength(Conta.FornecedorNomeMaximo);
+            b.Property(c => c.FornecedorDocumento).HasMaxLength(Conta.FornecedorDocumentoMaximo);
+            b.Property(c => c.NumeroDocumento).HasMaxLength(Conta.NumeroDocumentoMaximo);
+            b.Property(c => c.Observacao).HasMaxLength(Conta.ObservacaoMaximo);
+            b.Property(c => c.CriadaEm);
+
+            // RN-23.1: categoria com contas não é excluída (a FK recusa mesmo numa corrida).
+            b.HasOne<CategoriaFinanceira>().WithMany().HasForeignKey(c => c.CategoriaId).OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(c => c.Vencimento);
+            b.HasIndex(c => c.FornecedorId);
+            b.HasIndex(c => c.ParcelamentoId);
+            b.ToTable(t => t.HasCheckConstraint("ck_contas_valor_positivo", "\"Valor\" > 0"));
+        });
+    }
+}
+
+internal static class IndicesUnicos
+{
+    public const string NomeDaCategoria = "ux_categorias_nome";
+}
+
+/// <summary>Os exemplos da RN-23.1, com ids fixos (seed da migração).</summary>
+internal static class CategoriasIniciais
+{
+    public static readonly DateTimeOffset CriadaEm = new(2026, 11, 7, 0, 0, 0, TimeSpan.Zero);
+
+    public static readonly (Guid Id, string Nome)[] Todas =
+    [
+        (new Guid("0199a000-0000-7000-8000-000000000001"), "Compra de mercadorias"),
+        (new Guid("0199a000-0000-7000-8000-000000000002"), "Aluguel"),
+        (new Guid("0199a000-0000-7000-8000-000000000003"), "Energia"),
+        (new Guid("0199a000-0000-7000-8000-000000000004"), "Internet"),
+        (new Guid("0199a000-0000-7000-8000-000000000005"), "Impostos"),
+    ];
+}
