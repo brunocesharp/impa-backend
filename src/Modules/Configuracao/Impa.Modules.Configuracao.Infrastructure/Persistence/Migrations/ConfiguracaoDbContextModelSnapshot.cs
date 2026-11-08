@@ -23,6 +23,56 @@ namespace Impa.Modules.Configuracao.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Impa.Modules.Configuracao.Domain.Auditoria.RegistroDeAuditoria", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Entidade")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("EntidadeId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Modulo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTimeOffset>("OcorreuEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Operacao")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("RegistradoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UsuarioNome")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OcorreuEm");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("Modulo", "Entidade");
+
+                    b.ToTable("auditoria", "configuracao");
+                });
+
             modelBuilder.Entity("Impa.Modules.Configuracao.Domain.Notificacoes.Notificacao", b =>
                 {
                     b.Property<Guid>("Id")
@@ -169,6 +219,40 @@ namespace Impa.Modules.Configuracao.Infrastructure.Persistence.Migrations
                     b.HasIndex("Situacao", "ProximaTentativaEm");
 
                     b.ToTable("outbox", "configuracao");
+                });
+
+            modelBuilder.Entity("Impa.Modules.Configuracao.Domain.Auditoria.RegistroDeAuditoria", b =>
+                {
+                    b.OwnsMany("Impa.Modules.Configuracao.Domain.Auditoria.CampoAuditado", "Campos", b1 =>
+                        {
+                            b1.Property<Guid>("RegistroDeAuditoriaId");
+
+                            b1.Property<int>("__synthesizedOrdinal")
+                                .ValueGeneratedOnAdd();
+
+                            b1.Property<string>("Antes");
+
+                            b1.Property<string>("Campo")
+                                .IsRequired()
+                                .HasMaxLength(100);
+
+                            b1.Property<string>("Depois");
+
+                            b1.Property<bool>("Omitido");
+
+                            b1.HasKey("RegistroDeAuditoriaId", "__synthesizedOrdinal");
+
+                            b1.ToTable("auditoria", "configuracao");
+
+                            b1
+                                .ToJson("campos")
+                                .HasColumnType("jsonb");
+
+                            b1.WithOwner()
+                                .HasForeignKey("RegistroDeAuditoriaId");
+                        });
+
+                    b.Navigation("Campos");
                 });
 
             modelBuilder.Entity("Impa.Modules.Configuracao.Domain.Notificacoes.NotificacaoDestinatario", b =>
