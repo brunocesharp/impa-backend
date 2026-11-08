@@ -88,8 +88,9 @@ internal sealed class ContasRepository(FinanceiroDbContext db) : IContasReposito
     }
 
     /// <summary>
-    /// A versão da linha (xmin) mudou desde a leitura, ou a FK da forma de pagamento recusou a baixa nova (23503):
-    /// desfaz o rastreamento para o contexto seguir utilizável.
+    /// A versão da linha (xmin) mudou desde a leitura, ou uma FK recusou a baixa nova (23503): a da forma de pagamento
+    /// (forma excluída depois da validação) ou a da conta (conta excluída depois da leitura — o EF grava o INSERT da
+    /// baixa antes do UPDATE da conta). Desfaz o rastreamento para o contexto seguir utilizável.
     /// </summary>
     public async Task<GravacaoDaConta> SalvarAsync(CancellationToken ct)
     {
@@ -105,10 +106,13 @@ internal sealed class ContasRepository(FinanceiroDbContext db) : IContasReposito
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException
                                            { SqlState: PostgresErrorCodes.ForeignKeyViolation } pg
-                                           && pg.ConstraintName == ChavesEstrangeiras.FormaDePagamentoDaBaixa)
+                                           && pg.ConstraintName is ChavesEstrangeiras.FormaDePagamentoDaBaixa
+                                               or ChavesEstrangeiras.ContaDaBaixa)
         {
             db.ChangeTracker.Clear();
-            return GravacaoDaConta.FormaDePagamentoNaoEncontrada;
+            return pg.ConstraintName == ChavesEstrangeiras.ContaDaBaixa
+                ? GravacaoDaConta.ContaNaoEncontrada
+                : GravacaoDaConta.FormaDePagamentoNaoEncontrada;
         }
     }
 

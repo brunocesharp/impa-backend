@@ -7,6 +7,7 @@ using Impa.Modules.Financeiro.Application.Categorias;
 using Impa.Modules.Financeiro.Application.Contas;
 using Impa.Modules.Financeiro.Application.FormasDePagamento;
 using Impa.Modules.Pessoas.Application.Fornecedores;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Impa.Api.IntegrationTests;
@@ -599,6 +600,33 @@ public class FinanceiroTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFact
     }
 
     [Fact]
+    public async Task Excluir_primeiro_e_pagar_depois_o_pagamento_recebe_conta_nao_encontrada_e_nada_e_gravado()
+    {
+        var admin = await AdminAsync();
+        var conta = await ContaAsync(admin, "Taxa de lixo", "Impostos", 95m);
+        var dinheiro = await FormaAsync(admin, "Dinheiro");
+        await using var pagar = factory.Services.CreateAsyncScope();
+        await using var excluir = factory.Services.CreateAsyncScope();
+
+        // O pagamento lê a conta e registra a baixa (ainda não gravada)...
+        var repositorioDoPagamento = pagar.ServiceProvider.GetRequiredService<IContasRepository>();
+        var lidaParaPagar = (await repositorioDoPagamento.ObterAsync(conta.Id, CancellationToken.None))!;
+        lidaParaPagar.Pagar(new DateOnly(2026, 11, 5), 95m, dinheiro, DateTimeOffset.UtcNow);
+
+        // ...e, antes de ele gravar, a exclusão é gravada em outra operação.
+        var repositorioDaExclusao = excluir.ServiceProvider.GetRequiredService<IContasRepository>();
+        var lidaParaExcluir = (await repositorioDaExclusao.ObterAsync(conta.Id, CancellationToken.None))!;
+        Assert.True(await repositorioDaExclusao.RemoverAsync(lidaParaExcluir, CancellationToken.None));
+
+        // O INSERT da baixa viola a FK baixas → contas (23503): conta não encontrada, nada gravado.
+        Assert.Equal(GravacaoDaConta.ContaNaoEncontrada, await repositorioDoPagamento.SalvarAsync(CancellationToken.None));
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"{Contas}/{conta.Id}")).StatusCode);
+        await using var conferir = factory.Services.CreateAsyncScope();
+        var db = conferir.ServiceProvider.GetRequiredService<Impa.Modules.Financeiro.Infrastructure.Persistence.FinanceiroDbContext>();
+        Assert.False(await db.Baixas.AnyAsync(b => b.ContaId == conta.Id));
+    }
+
+    [Fact]
     public async Task Forma_excluida_entre_a_validacao_e_a_gravacao_nao_grava_o_pagamento()
     {
         var admin = await AdminAsync();
@@ -696,6 +724,22 @@ public class FinanceiroTests(ImpaApiFactory factory) : IClassFixture<ImpaApiFact
         var depois = await ObterAsync(admin, conta.Id);
         Assert.Equal(("paga", 1), (depois.SituacaoDoPagamento, depois.Baixas.Count(b => !b.Estornada)));
         Assert.Contains(await ListaAsync<FormaDePagamentoDto>(admin, Formas), f => f.Id == pix);
+    }
+
+    [Fact]
+    public async Task Listar_formas_de_pagamento_exige_financeiro_ver_e_sessao()
+    {
+        _ = await AdminAsync();
+        await factory.CriarUsuarioAsync("rita", "balcao-2026", "Rita", PerfisPadrao.OperadorDeCaixa.Nome);
+        var rita = await EntrarAsync("rita", "balcao-2026");
+
+        // Operador de caixa: sem financeiro.ver.
+        Assert.Equal(HttpStatusCode.Forbidden, (await rita.GetAsync(Formas)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await rita.GetAsync($"{Formas}?incluirInativas=true")).StatusCode);
+
+        // Sem sessão: 401.
+        var anonimo = await ClienteApi.AbrirAsync(factory);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonimo.GetAsync(Formas)).StatusCode);
     }
 
     private static decimal Dec(string valor) => decimal.Parse(valor, System.Globalization.CultureInfo.InvariantCulture);

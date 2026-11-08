@@ -86,6 +86,8 @@ public sealed class PagarContaCommandHandler(
             case GravacaoDaConta.FormaDePagamentoNaoEncontrada: // excluída entre a validação e a gravação
                 return Result<ContaDto>.Invalid(new ValidationError(
                     nameof(PagarContaCommand.FormaDePagamentoId), MensagensFinanceiro.FormaDePagamentoNaoEncontrada));
+            case GravacaoDaConta.ContaNaoEncontrada: // excluída entre a leitura e a gravação
+                return Result<ContaDto>.NotFound(MensagensFinanceiro.ContaNaoEncontrada);
         }
 
         return Result.Created(ContaDto.De(

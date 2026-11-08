@@ -66,7 +66,8 @@ public sealed class FinanceiroDbContext(DbContextOptions<FinanceiroDbContext> op
             b.Ignore(c => c.Pagamento);
 
             // RN-23.5: as baixas da conta. Sem pagamento, a conta pode ser excluída com as baixas estornadas (RN-23.7).
-            b.HasMany(c => c.Baixas).WithOne().HasForeignKey(x => x.ContaId).OnDelete(DeleteBehavior.Cascade);
+            b.HasMany(c => c.Baixas).WithOne().HasForeignKey(x => x.ContaId).OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName(ChavesEstrangeiras.ContaDaBaixa);
             b.Navigation(c => c.Baixas).UsePropertyAccessMode(PropertyAccessMode.Field);
 
             // RN-23.1: categoria com contas não é excluída (a FK recusa mesmo numa corrida).
@@ -116,7 +117,8 @@ public sealed class FinanceiroDbContext(DbContextOptions<FinanceiroDbContext> op
             b.Ignore(x => x.Estornada);
 
             // A baixa guarda a forma usada: forma com pagamentos não é excluída, só inativada.
-            b.HasOne<FormaDePagamentoFinanceira>().WithMany().HasForeignKey(x => x.FormaDePagamentoId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<FormaDePagamentoFinanceira>().WithMany().HasForeignKey(x => x.FormaDePagamentoId).OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName(ChavesEstrangeiras.FormaDePagamentoDaBaixa);
             b.HasIndex(x => x.ContaId);
             b.HasIndex(x => x.FormaDePagamentoId);
             b.ToTable(t => t.HasCheckConstraint("ck_baixas_valor_positivo", "\"Valor\" > 0"));
@@ -130,10 +132,15 @@ internal static class IndicesUnicos
     public const string NomeDaFormaDePagamento = "ux_formas_pagamento_nome";
 }
 
+/// <summary>
+/// Nomes das FKs das baixas, fixados no modelo (<c>HasConstraintName</c>) para o filtro do 23503 no repositório não
+/// depender do nome gerado por convenção. São os mesmos nomes da migração BaixasEFormasDePagamento.
+/// </summary>
 internal static class ChavesEstrangeiras
 {
-    /// <summary>Nome gerado pelo EF na migração BaixasEFormasDePagamento.</summary>
     public const string FormaDePagamentoDaBaixa = "FK_baixas_formas_pagamento_FormaDePagamentoId";
+
+    public const string ContaDaBaixa = "FK_baixas_contas_ContaId";
 }
 
 /// <summary>Os exemplos da RN-23.4, com ids fixos (seed da migração).</summary>

@@ -65,9 +65,13 @@ internal sealed class ContasEmMemoria : IContasRepository
     /// <summary>Simula a FK da forma de pagamento recusando a baixa nova (forma excluída depois da validação).</summary>
     public bool FormaExcluidaNaGravacao { get; set; }
 
+    /// <summary>Simula a FK da conta recusando a baixa nova (conta excluída depois da leitura).</summary>
+    public bool ContaExcluidaNaGravacao { get; set; }
+
     public Task<GravacaoDaConta> SalvarAsync(CancellationToken ct) => Task.FromResult(
         RecusarGravacao ? GravacaoDaConta.AlteradaAoMesmoTempo
         : FormaExcluidaNaGravacao ? GravacaoDaConta.FormaDePagamentoNaoEncontrada
+        : ContaExcluidaNaGravacao ? GravacaoDaConta.ContaNaoEncontrada
         : GravacaoDaConta.Gravada);
 
     public Task<bool> ExisteBaixaDaFormaAsync(Guid formaDePagamentoId, CancellationToken ct) =>

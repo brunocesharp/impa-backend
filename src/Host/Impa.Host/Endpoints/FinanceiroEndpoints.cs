@@ -146,7 +146,8 @@ public static class FinanceiroEndpoints
             .WithName("AlterarConta")
             .Produces<ContaDto>()
             .ProducesValidationProblem()
-            .Produces<ErroDto>(StatusCodes.Status404NotFound);
+            .Produces<ErroDto>(StatusCodes.Status404NotFound)
+            .Produces<ErroDto>(StatusCodes.Status409Conflict);
 
         grupo.MapDelete("/{id:guid}", ExcluirConta)
             .RequirePermissao(Permissoes.FinanceiroEditar)

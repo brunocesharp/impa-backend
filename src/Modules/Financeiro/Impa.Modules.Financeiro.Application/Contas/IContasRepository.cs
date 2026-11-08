@@ -97,7 +97,8 @@ public interface IContasRepository
 
     /// <summary>
     /// Grava as mudanças da conta. Nada é gravado quando outra operação mudou a conta depois da leitura (versão da
-    /// linha) ou quando a forma de pagamento de uma baixa nova foi excluída entre a validação e a gravação (FK).
+    /// linha), quando a forma de pagamento de uma baixa nova foi excluída entre a validação e a gravação (FK) ou quando a
+    /// conta de uma baixa nova foi excluída depois da leitura (FK).
     /// </summary>
     Task<GravacaoDaConta> SalvarAsync(CancellationToken ct);
 
@@ -121,6 +122,9 @@ public enum GravacaoDaConta
 
     /// <summary>A FK baixas → formas_pagamento recusou (23503): a forma foi excluída depois da validação.</summary>
     FormaDePagamentoNaoEncontrada,
+
+    /// <summary>A FK baixas → contas recusou (23503): a conta foi excluída depois da leitura (404 "Conta não encontrada").</summary>
+    ContaNaoEncontrada,
 }
 
 /// <summary>Categorias que o handler já leu (nome para a resposta).</summary>

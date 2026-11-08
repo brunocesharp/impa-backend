@@ -119,6 +119,18 @@ public class BaixasHandlersTests
     }
 
     [Fact]
+    public async Task Conta_excluida_entre_a_leitura_e_a_gravacao_do_pagamento_404()
+    {
+        var conta = ContaDe(500m);
+        _contas.ContaExcluidaNaGravacao = true;
+
+        var resultado = await PagarAsync(conta.Id, 10m);
+
+        Assert.Equal(ResultStatus.NotFound, resultado.Status);
+        Assert.Equal("Conta não encontrada", Assert.Single(resultado.Errors));
+    }
+
+    [Fact]
     public async Task Estornar_com_gravacao_concorrente_409()
     {
         var conta = ContaDe(500m);
