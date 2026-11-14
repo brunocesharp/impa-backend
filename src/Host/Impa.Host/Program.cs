@@ -101,6 +101,7 @@ app.MapPerfisEndpoints();
 app.MapUsuariosEndpoints();
 app.MapPessoasEndpoints();
 app.MapTerminaisEndpoints();
+app.MapLiberacoesEndpoints(); // liberação por administrador (story 1-5)
 app.MapFinanceiroEndpoints();
 app.MapMensageriaEndpoints();
 app.MapNotificacoesEndpoints();

@@ -129,6 +129,54 @@ namespace Impa.Modules.Acesso.Infrastructure.Persistence.Migrations
                     b.ToTable("usuarios", "acesso");
                 });
 
+            modelBuilder.Entity("Impa.Modules.Acesso.Infrastructure.Liberacoes.Liberacao", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CriadaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiraEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("LiberadorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Operacao")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("OperadorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Permissao")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("SessaoId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<DateTimeOffset?>("UsadaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LiberadorId");
+
+                    b.HasIndex("OperadorId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("liberacoes", "acesso");
+                });
+
             modelBuilder.Entity("Impa.Modules.Acesso.Infrastructure.Sessoes.Sessao", b =>
                 {
                     b.Property<Guid>("Id")
@@ -300,6 +348,21 @@ namespace Impa.Modules.Acesso.Infrastructure.Persistence.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("usuarios_tokens", "acesso");
+                });
+
+            modelBuilder.Entity("Impa.Modules.Acesso.Infrastructure.Liberacoes.Liberacao", b =>
+                {
+                    b.HasOne("Impa.Modules.Acesso.Infrastructure.Identity.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("LiberadorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Impa.Modules.Acesso.Infrastructure.Identity.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("OperadorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Impa.Modules.Acesso.Infrastructure.Sessoes.Sessao", b =>

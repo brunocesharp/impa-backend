@@ -59,9 +59,12 @@ public sealed class SessaoTicketStore(TimeProvider relogio) : ITicketStore
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken);
 
         // Revogada (logout, usuário desativado) ou vencida: o cookie não autentica, e a API responde 401.
-        return sessao is not null && sessao.ValeEm(relogio.GetUtcNow())
-            ? TicketSerializer.Default.Deserialize(sessao.Tiquete)
-            : null;
+        if (sessao is null || !sessao.ValeEm(relogio.GetUtcNow()))
+            return null;
+
+        // A liberação por administrador fica ligada à sessão do operador (story 1-5).
+        httpContext.Features.Set(new SessaoDaRequisicao(sessao.Id));
+        return TicketSerializer.Default.Deserialize(sessao.Tiquete);
     }
 
     public async Task RemoveAsync(string key, HttpContext httpContext, CancellationToken cancellationToken)

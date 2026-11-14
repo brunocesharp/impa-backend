@@ -129,4 +129,30 @@ public class LimiteDeLoginTests(LimiteDeLoginFactory factory) : IClassFixture<Li
         for (var i = 0; i < 15; i++)
             Assert.NotEqual(HttpStatusCode.TooManyRequests, (await cliente.SairAsync()).StatusCode);
     }
+
+    /// <summary>
+    /// Story 1-5, R1: a liberação por administrador confere usuário e senha como o login e conta no mesmo limite por IP
+    /// — de uma sessão aberta, não dá para testar senhas de outras contas sem o limite.
+    /// </summary>
+    [Fact]
+    public async Task Liberacao_por_administrador_conta_no_mesmo_limite_por_ip_do_login()
+    {
+        var operador = await NovoUsuarioAsync("op-lib");
+        var cliente = await ClienteDoIpAsync("203.0.113.150");
+        Assert.Equal(HttpStatusCode.NoContent, (await cliente.EntrarAsync(operador, Senha)).StatusCode); // 1ª da janela
+
+        for (var i = 0; i < 9; i++)
+        {
+            var recusada = await cliente.PostAsync("/api/acesso/liberacoes",
+                new { usuario = $"admin-{i}", senha = "errada-123", permissao = "vendas.cancelar-concluida" });
+            Assert.Equal(HttpStatusCode.Forbidden, recusada.StatusCode);
+        }
+
+        var excedida = await cliente.PostAsync("/api/acesso/liberacoes",
+            new { usuario = "admin", senha = "errada-123", permissao = "vendas.cancelar-concluida" });
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, excedida.StatusCode);
+        Assert.Equal(MensagemMuitasTentativas, (await excedida.Content.ReadFromJsonAsync<ErroResposta>())!.Mensagem);
+        Assert.True(excedida.Headers.RetryAfter is not null);
+    }
 }

@@ -1,4 +1,5 @@
 using Impa.Modules.Acesso.Infrastructure.Identity;
+using Impa.Modules.Acesso.Infrastructure.Liberacoes;
 using Impa.Modules.Acesso.Infrastructure.Sessoes;
 using Impa.Modules.Acesso.Infrastructure.Terminais;
 using Microsoft.AspNetCore.Identity;
@@ -16,6 +17,8 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
     public DbSet<Sessao> Sessoes => Set<Sessao>();
 
     public DbSet<Terminal> Terminais => Set<Terminal>();
+
+    public DbSet<Liberacao> Liberacoes => Set<Liberacao>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -54,6 +57,18 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
             // Nome único só entre os ativos: revogado o terminal, o mesmo nome pode ser registrado de novo.
             b.HasIndex(t => t.NomeNormalizado).IsUnique().HasFilter("\"RevogadoEm\" IS NULL");
             b.HasOne<Usuario>().WithMany().HasForeignKey(t => t.CriadoPor).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<Liberacao>(b =>
+        {
+            b.ToTable("liberacoes");
+            b.HasKey(l => l.Id);
+            b.Property(l => l.Id).ValueGeneratedNever();
+            b.Property(l => l.TokenHash).IsRequired();
+            b.Property(l => l.Permissao).HasMaxLength(Liberacao.PermissaoMaximo).IsRequired();
+            b.Property(l => l.Operacao).HasMaxLength(Liberacao.OperacaoMaximo);
+            b.HasIndex(l => l.TokenHash).IsUnique(); // consumo pelo token, a cada operação liberada
+            b.HasOne<Usuario>().WithMany().HasForeignKey(l => l.OperadorId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<Usuario>().WithMany().HasForeignKey(l => l.LiberadorId).OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<Perfil>(b =>
         {

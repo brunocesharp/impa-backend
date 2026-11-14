@@ -1,7 +1,10 @@
 namespace Impa.Modules.Acesso.Contracts;
 
-/// <summary>Uma permissão do catálogo: código (claim <see cref="Permissoes.ClaimType"/>), grupo e texto da tela.</summary>
-public sealed record PermissaoInfo(string Codigo, string Grupo, string Descricao);
+/// <summary>
+/// Uma permissão do catálogo: código (claim <see cref="Permissoes.ClaimType"/>), grupo e texto da tela.
+/// <paramref name="Liberavel"/>: quem não a tem pode pedir a liberação de um administrador na hora (RN-1.9, story 1-5).
+/// </summary>
+public sealed record PermissaoInfo(string Codigo, string Grupo, string Descricao, bool Liberavel = false);
 
 /// <summary>
 /// Catálogo de permissões do sistema (RN-1.4: permissões por funcionalidade). O catálogo fica no código;
@@ -33,6 +36,12 @@ public static class Permissoes
     public const string ImportacaoExecutar = "importacao.executar";
     public const string LiberarOperacoes = "liberar.operacoes";
 
+    /// <summary>Desconto acima do limite do perfil (story 6.3). Liberável (RN-1.9).</summary>
+    public const string PdvDescontoAcimaDoLimite = "pdv.desconto.acima-do-limite";
+
+    /// <summary>Cancelar venda já concluída (story 10.2). Liberável (RN-1.9, cenário 1.8).</summary>
+    public const string VendasCancelarConcluida = "vendas.cancelar-concluida";
+
     /// <summary>RN-2.3: recebe as notificações dentro do sistema (story 4.2).</summary>
     public const string NotificacoesReceber = "notificacoes.receber";
 
@@ -54,6 +63,8 @@ public static class Permissoes
         new(CaixaFechar, GrupoVendas, "Fechar caixa"),
         new(CaixaConsultar, GrupoVendas, "Consultar caixas"),
         new(LiberarOperacoes, GrupoVendas, "Liberar operações"),
+        new(PdvDescontoAcimaDoLimite, GrupoVendas, "Dar desconto acima do limite", Liberavel: true),
+        new(VendasCancelarConcluida, GrupoVendas, "Cancelar venda concluída", Liberavel: true),
 
         new(CatalogoVer, GrupoCatalogo, "Consultar itens"),
         new(CatalogoCustoVer, GrupoCatalogo, "Ver custo dos itens"),
@@ -82,5 +93,11 @@ public static class Permissoes
 
     private static readonly HashSet<string> Codigos = new(Todas, StringComparer.Ordinal);
 
+    private static readonly HashSet<string> CodigosLiberaveis =
+        new(Catalogo.Where(p => p.Liberavel).Select(p => p.Codigo), StringComparer.Ordinal);
+
     public static bool Existe(string codigo) => Codigos.Contains(codigo);
+
+    /// <summary>RN-1.9: a permissão pode ser liberada por um administrador para uma operação.</summary>
+    public static bool EhLiberavel(string codigo) => CodigosLiberaveis.Contains(codigo);
 }
