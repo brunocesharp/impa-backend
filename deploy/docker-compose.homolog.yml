@@ -34,6 +34,11 @@ services:
       IMPA_ADMIN_NOME: ${IMPA_ADMIN_NOME:-Administrador}
       Empresa__Nome: ${EMPRESA_NOME:-Impacto Papelaria}
       MediatR__LicenseKey: ${MEDIATR_LICENSE_KEY:-}
+      # Recuperação de senha (story 1-8): base dos links e e-mail pelo Brevo (ADR-009).
+      Acesso__RecuperacaoDeSenha__UrlDaAplicacao: https://${DOMINIO}
+      Email__Remetente: ${EMAIL_REMETENTE:-}
+      Email__NomeDoRemetente: ${EMAIL_NOME_REMETENTE:-IMPA}
+      Email__Brevo__ChaveDaApi: ${BREVO_CHAVE_API:-}
     volumes:
       - chaves-sessao:/keys
     depends_on:

@@ -4,6 +4,7 @@ using Impa.Modules.Acesso.Infrastructure.Sessoes;
 using Impa.Modules.Acesso.Infrastructure.Terminais;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Impa.Shared.Messaging;
 using Microsoft.EntityFrameworkCore;
 
 namespace Impa.Modules.Acesso.Infrastructure.Persistence;
@@ -80,5 +81,9 @@ public sealed class AcessoDbContext(DbContextOptions<AcessoDbContext> options)
         modelBuilder.Entity<IdentityUserClaim<Guid>>().ToTable("usuarios_claims");
         modelBuilder.Entity<IdentityUserLogin<Guid>>().ToTable("usuarios_logins");
         modelBuilder.Entity<IdentityUserToken<Guid>>().ToTable("usuarios_tokens");
+
+        // Mensageria (story 1-8): publica e consome o pedido de recuperação de senha no próprio schema.
+        modelBuilder.MapearOutbox(Schema);
+        modelBuilder.MapearInbox(Schema);
     }
 }

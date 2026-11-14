@@ -6,7 +6,10 @@ using Impa.Modules.Acesso.Application.Autenticacao.Commands.Entrar;
 using Impa.Modules.Acesso.Application.Autenticacao.Commands.Sair;
 using Impa.Modules.Acesso.Application.Autenticacao.Commands.TrocarSenha;
 using Impa.Modules.Acesso.Application.Autenticacao.Queries.ObterSessaoAtual;
+using Impa.Modules.Acesso.Application.RecuperacaoDeSenha.Commands.RedefinirSenhaPorLink;
+using Impa.Modules.Acesso.Application.RecuperacaoDeSenha.Commands.SolicitarRecuperacaoDeSenha;
 using MediatR;
+using Microsoft.AspNetCore.Authentication;
 
 namespace Impa.Host.Endpoints;
 
@@ -17,7 +20,14 @@ public sealed record TrocarSenhaRequest(string? SenhaAtual, string? NovaSenha)
     public override string ToString() => $"{nameof(TrocarSenhaRequest)} {{ SenhaAtual = ***, NovaSenha = *** }}";
 }
 
-/// <summary><c>/api/auth</c>: login, logout e sessão atual (ADR-006).</summary>
+public sealed record EsqueciSenhaRequest(string? UsuarioOuEmail);
+
+public sealed record RedefinirSenhaPorLinkRequest(string? Token, string? NovaSenha)
+{
+    public override string ToString() => $"{nameof(RedefinirSenhaPorLinkRequest)} {{ Token = ***, NovaSenha = *** }}";
+}
+
+/// <summary><c>/api/auth</c>: login, logout, sessão atual (ADR-006) e recuperação de senha por e-mail (story 1-8).</summary>
 public static class AutenticacaoEndpoints
 {
     /// <summary><c>codigo</c> do 401 de login quando a conta está bloqueada por tentativas (RN-1.2).</summary>
@@ -66,7 +76,49 @@ public static class AutenticacaoEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .LiberarNaTrocaDeSenha();
 
+        // Recuperação de senha por e-mail (story 1-8, RN-1.11). Anônimas, com o limite por IP do login.
+        grupo.MapPost("/esqueci-senha", SolicitarRecuperacaoDeSenha)
+            .AllowAnonymous()
+            .RequireRateLimiting(LimiteDeLogin.Politica)
+            .LiberarNaTrocaDeSenha()
+            .WithName("EsqueciSenha")
+            .WithSummary("Pede o link de redefinição por e-mail; a resposta é a mesma exista ou não o usuário")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesValidationProblem()
+            .Produces<ErroDto>(StatusCodes.Status400BadRequest)
+            .Produces<ErroDto>(StatusCodes.Status429TooManyRequests);
+
+        grupo.MapPost("/redefinir-senha", RedefinirSenhaPorLink)
+            .AllowAnonymous()
+            .RequireRateLimiting(LimiteDeLogin.Politica)
+            .LiberarNaTrocaDeSenha()
+            .WithName("RedefinirSenha")
+            .WithSummary("Define a nova senha com o token do link (uso único, 30 minutos) e encerra as sessões abertas")
+            .Produces(StatusCodes.Status204NoContent)
+            // errors.Token = ["Link inválido ou expirado"] ou errors.NovaSenha (RN-1.1); { mensagem } do CSRF.
+            .ProducesValidationProblem()
+            .Produces<ErroDto>(StatusCodes.Status400BadRequest)
+            .Produces<ErroDto>(StatusCodes.Status429TooManyRequests);
+
         return app;
+    }
+
+    private static async Task<IResult> SolicitarRecuperacaoDeSenha(EsqueciSenhaRequest request, ISender mediator, CancellationToken ct) =>
+        (await mediator.Send(new SolicitarRecuperacaoDeSenhaCommand(request.UsuarioOuEmail ?? string.Empty), ct)).ParaHttp();
+
+    private static async Task<IResult> RedefinirSenhaPorLink(RedefinirSenhaPorLinkRequest request, ISender mediator, HttpContext contexto, CancellationToken ct)
+    {
+        var resultado = await mediator.Send(
+            new RedefinirSenhaPorLinkCommand(request.Token ?? string.Empty, request.NovaSenha ?? string.Empty), ct);
+        if (resultado.IsSuccess && contexto.User.Identity?.IsAuthenticated == true)
+        {
+            // A sessão deste navegador (se havia) foi encerrada junto com as outras: sai do cookie e do token XSRF.
+            await contexto.SignOutAsync();
+            contexto.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity());
+            ProtecaoCsrf.EmitirToken(contexto);
+        }
+
+        return resultado.ParaHttp();
     }
 
     private static async Task<IResult> TrocarSenha(TrocarSenhaRequest request, ISender mediator, HttpContext contexto, CancellationToken ct)

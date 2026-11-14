@@ -33,6 +33,12 @@ public class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     /// <summary>Hasher do Identity com contador de conferências (tempo do login de usuário inexistente).</summary>
     public HasherContador Hasher { get; } = new();
 
+    /// <summary>E-mails "enviados" (adaptador falso do Brevo, story 1-8).</summary>
+    public CaixaDeEmails Emails { get; } = new();
+
+    /// <summary>Endereço da SPA usado nos links de e-mail.</summary>
+    public const string UrlDaAplicacao = "https://impa.test";
+
     public string ConnectionString => _postgres.GetConnectionString();
 
     /// <summary>Tentativas de login por IP na janela (<c>Autenticacao:LimiteDeLogin:Tentativas</c>).</summary>
@@ -59,8 +65,11 @@ public class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Empresa:Nome", NomeEmpresa);
         builder.UseSetting("Autenticacao:LimiteDeLogin:Tentativas", TentativasDeLogin.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.UseSetting("Autenticacao:LimiteDeLogin:JanelaEmSegundos", JanelaDeLoginEmSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.UseSetting("Acesso:RecuperacaoDeSenha:UrlDaAplicacao", UrlDaAplicacao);
         builder.ConfigureServices(services =>
         {
+            services.RemoveAll<Impa.Shared.Email.IEnvioDeEmail>();
+            services.AddSingleton<Impa.Shared.Email.IEnvioDeEmail>(Emails);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
             services.RemoveAll<IPasswordHasher<Usuario>>();
