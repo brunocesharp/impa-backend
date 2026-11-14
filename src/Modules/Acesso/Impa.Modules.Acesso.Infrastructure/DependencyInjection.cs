@@ -10,6 +10,9 @@ using Impa.Modules.Acesso.Infrastructure.Liberacoes;
 using Impa.Modules.Acesso.Infrastructure.Persistence;
 using Impa.Modules.Acesso.Infrastructure.Sessoes;
 using Impa.Modules.Acesso.Infrastructure.Terminais;
+using Impa.Modules.Acesso.Application.RecuperacaoDeSenha;
+using Impa.Modules.Acesso.Infrastructure.RecuperacaoDeSenha;
+using Impa.Shared.Messaging;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,11 +32,28 @@ public static class DependencyInjection
     /// Registra o módulo Acesso: banco, Identity (usuários, perfis, SignInManager) e a sessão.
     /// O esquema de autenticação por cookie é configurado pelo Host.
     /// </summary>
+    /// <summary>Nome do consumidor no registro da mensageria (Inbox do Acesso).</summary>
+    public const string Consumidor = "Acesso";
+
     public static IdentityBuilder AddAcessoModule(this IServiceCollection services, string connectionString)
     {
-        services.AddDbContext<AcessoDbContext>(options => options.UseNpgsql(
-            connectionString,
-            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", AcessoDbContext.Schema)));
+        services.AddMensageria();
+        services.AddDbContext<AcessoDbContext>((sp, options) => options
+            .UseNpgsql(connectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", AcessoDbContext.Schema))
+            .UsarOutbox(sp));
+        services.AddOutbox<AcessoDbContext>();
+
+        // Recuperação de senha por e-mail (story 1-8): o Acesso publica o pedido e ele mesmo consome (Inbox),
+        // gerando o link e chamando o IEnvioDeEmail fora da requisição.
+        services.AddOptions<OpcoesDaRecuperacaoDeSenha>()
+            .BindConfiguration(OpcoesDaRecuperacaoDeSenha.Secao)
+            .Validate(o => Uri.TryCreate(o.UrlDaAplicacao, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http",
+                "Acesso:RecuperacaoDeSenha:UrlDaAplicacao precisa ser o endereço público da SPA (ex.: https://impa.exemplo.com.br).")
+            .ValidateOnStart();
+        services.AddSingleton<TokenDeRedefinicao>();
+        services.AddScoped<IRecuperacaoDeSenha, RecuperacaoDeSenhaService>();
+        services.AddIntegrationEventHandler<RecuperacaoDeSenhaSolicitada, EnviarEmailDeRecuperacao, AcessoDbContext>(Consumidor);
 
         services.AddHttpContextAccessor();
         services.AddSingleton<HashFicticio>();

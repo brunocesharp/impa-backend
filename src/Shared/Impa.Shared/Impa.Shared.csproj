@@ -9,6 +9,9 @@
   <ItemGroup>
     <!-- Mensageria (ADR-011): mapeamento reutilizável de Outbox e Inbox no schema de cada módulo. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" />
+    <!-- Envio de e-mail (ADR-009): cliente HTTP tipado do Brevo e opções da seção Email. -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
   </ItemGroup>
 
 </Project>

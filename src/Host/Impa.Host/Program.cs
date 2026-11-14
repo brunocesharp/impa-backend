@@ -13,6 +13,7 @@ using Impa.Modules.Pessoas.Application;
 using Impa.Modules.Pessoas.Infrastructure;
 using Impa.Modules.Configuracao.Application;
 using Impa.Modules.Configuracao.Infrastructure;
+using Impa.Shared.Email;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +48,11 @@ builder.Services.AddValidatorsFromAssembly(AcessoApplication.Assembly);
 builder.Services.AddValidatorsFromAssembly(PessoasApplication.Assembly);
 builder.Services.AddValidatorsFromAssembly(ConfiguracaoApplication.Assembly);
 builder.Services.AddValidatorsFromAssembly(FinanceiroApplication.Assembly);
+
+// E-mail transacional (ADR-009): Brevo com a chave Email__Brevo__ChaveDaApi. Sem chave, em desenvolvimento e testes
+// o envio é descartado; fora deles cada envio falha e fica no Outbox "com falha" (a API continua no ar).
+builder.Services.AddEnvioDeEmail(builder.Configuration,
+    descartarSemChave: builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"));
 
 // Integration events (ADR-011): despachante dos Outbox, espera por chave e reprocessamento.
 // Cada módulo registra o próprio Outbox e os próprios handlers.

@@ -247,6 +247,87 @@ namespace Impa.Modules.Acesso.Infrastructure.Persistence.Migrations
                     b.ToTable("terminais", "acesso");
                 });
 
+            modelBuilder.Entity("Impa.Shared.Messaging.InboxMensagem", b =>
+                {
+                    b.Property<Guid>("EventoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("evento_id");
+
+                    b.Property<string>("Handler")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("handler");
+
+                    b.Property<DateTimeOffset>("ProcessadoEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processado_em");
+
+                    b.HasKey("EventoId", "Handler");
+
+                    b.ToTable("inbox", "acesso");
+                });
+
+            modelBuilder.Entity("Impa.Shared.Messaging.OutboxMensagem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ChaveDeCorrelacao")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("chave_de_correlacao");
+
+                    b.Property<string>("Conteudo")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("conteudo");
+
+                    b.Property<DateTimeOffset?>("EntregueEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("entregue_em");
+
+                    b.Property<DateTimeOffset>("OcorreuEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ocorreu_em");
+
+                    b.Property<DateTimeOffset>("ProximaTentativaEm")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("proxima_tentativa_em");
+
+                    b.Property<string>("Situacao")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("situacao");
+
+                    b.Property<int>("Tentativas")
+                        .HasColumnType("integer")
+                        .HasColumnName("tentativas");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("tipo");
+
+                    b.Property<string>("UltimoErro")
+                        .HasColumnType("text")
+                        .HasColumnName("ultimo_erro");
+
+                    b.Property<int>("Versao")
+                        .HasColumnType("integer")
+                        .HasColumnName("versao");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChaveDeCorrelacao");
+
+                    b.HasIndex("Situacao", "ProximaTentativaEm");
+
+                    b.ToTable("outbox", "acesso");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.Property<int>("Id")
