@@ -31,9 +31,11 @@ public class PerfisPadraoTests
     }
 
     [Fact]
-    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_terminais_notificacoes_auditoria_as_duas_da_3_7_e_a_da_11_1()
+    public void Catalogo_tem_as_15_permissoes_da_1_1_mais_perfis_terminais_notificacoes_auditoria_as_duas_da_3_7_a_da_11_1_e_as_duas_liberaveis_da_1_5()
     {
-        Assert.Equal(22, Permissoes.Todas.Count);
+        Assert.Equal(24, Permissoes.Todas.Count);
+        Assert.Contains("pdv.desconto.acima-do-limite", Permissoes.Todas); // story 1-5
+        Assert.Contains("vendas.cancelar-concluida", Permissoes.Todas); // story 1-5
         Assert.Contains("auditoria.ver", Permissoes.Todas); // story 4.4
         Assert.Contains("notificacoes.receber", Permissoes.Todas); // story 4.2
         Assert.Contains("clientes.inativar", Permissoes.Todas); // story 3-7

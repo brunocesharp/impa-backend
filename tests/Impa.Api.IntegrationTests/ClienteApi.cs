@@ -33,7 +33,8 @@ public sealed class ClienteApi(HttpClient http)
 
     public Task<HttpResponseMessage> DeleteAsync(string url) => EnviarAsync(HttpMethod.Delete, url, null);
 
-    public async Task<HttpResponseMessage> EnviarAsync(HttpMethod metodo, string url, object? corpo, bool enviarXsrf = true)
+    public async Task<HttpResponseMessage> EnviarAsync(HttpMethod metodo, string url, object? corpo, bool enviarXsrf = true,
+        Dictionary<string, string>? cabecalhos = null)
     {
         using var requisicao = new HttpRequestMessage(metodo, url)
         {
@@ -41,6 +42,8 @@ public sealed class ClienteApi(HttpClient http)
         };
         if (enviarXsrf && TokenXsrf is not null)
             requisicao.Headers.Add(CabecalhoXsrf, TokenXsrf);
+        foreach (var (nome, valor) in cabecalhos ?? [])
+            requisicao.Headers.Add(nome, valor);
 
         return Capturar(await http.SendAsync(requisicao));
     }

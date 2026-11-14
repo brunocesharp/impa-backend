@@ -13,6 +13,9 @@ public sealed record ItemDeExemplo(
     decimal Preco,
     [property: ExigePermissao(Permissoes.CatalogoCustoVer)] decimal Custo);
 
+/// <summary>O que o módulo gravaria no registro da operação (story 1-5, T4): operador e quem liberou.</summary>
+public sealed record OperacaoRegistrada(Guid? Operador, Guid? Liberador);
+
 /// <summary>
 /// Funções do cenário 1.5 que ainda não têm endpoint (PDV, contas a pagar, fiscal, importação, itens), protegidas
 /// com as permissões reais do catálogo — a mesma convenção que os endpoints de verdade vão usar (README).
@@ -29,8 +32,22 @@ public sealed class EndpointsDeExemplo : IEndpointsAdicionais
     public const string PdvNoTerminal = "/api/teste/terminal/pdv/vender";
     public const string CaixaNoTerminal = "/api/teste/terminal/caixa";
 
+    /// <summary>
+    /// Story 1-5: operação que exige uma permissão liberável (cancelar venda concluída, cenário 1.8). Devolve quem
+    /// operou e quem liberou, como o <c>IContextoDeAcesso</c> entrega ao módulo que grava a operação.
+    /// </summary>
+    public const string CancelarVendaConcluida = "/api/teste/vendas/1/cancelar";
+
+    /// <summary>Mesma permissão liberável, mas também exige terminal registrado.</summary>
+    public const string CancelarVendaNoTerminal = "/api/teste/terminal/vendas/1/cancelar";
+
     public void Mapear(IEndpointRouteBuilder app)
     {
+        app.MapPost(CancelarVendaConcluida, (IContextoDeAcesso acesso) =>
+                Results.Ok(new OperacaoRegistrada(acesso.UsuarioId, acesso.Liberador)))
+            .RequirePermissao(Permissoes.VendasCancelarConcluida);
+        app.MapPost(CancelarVendaNoTerminal, () => Results.NoContent())
+            .RequirePermissao(Permissoes.VendasCancelarConcluida).RequireTerminal();
         app.MapPost(Pdv, () => Results.NoContent()).RequirePermissao(Permissoes.PdvVender);
         app.MapGet(ContasAPagar, () => Results.Ok(Array.Empty<object>())).RequirePermissao(Permissoes.FinanceiroVer);
         app.MapPut(ConfiguracaoFiscal, () => Results.NoContent()).RequirePermissao(Permissoes.ConfiguracaoFiscal);

@@ -37,8 +37,8 @@ public sealed class TerminalAuthorizationHandler : AuthorizationHandler<Terminal
 
 /// <summary>
 /// Quando só falta o terminal válido, a política responde 403 <c>{ mensagem, codigo: "terminal_nao_registrado" }</c> (a
-/// SPA mostra a mensagem do cenário 11.6). Os demais resultados seguem o padrão (401 sem sessão, 403 sem permissão —
-/// inclusive sem permissão e sem terminal).
+/// SPA mostra a mensagem do cenário 11.6). Sem a permissão — inclusive sem permissão e sem terminal — 403
+/// <c>{ codigo: "permissao_requerida", permissao, liberavel }</c> (story 1-5). Os demais seguem o padrão (401 sem sessão).
 /// </summary>
 public sealed class RespostaDaAutorizacao : IAuthorizationMiddlewareResultHandler
 {
@@ -50,6 +50,13 @@ public sealed class RespostaDaAutorizacao : IAuthorizationMiddlewareResultHandle
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             await context.Response.WriteAsJsonAsync(new ErroDto(MensagensTerminais.NaoRegistrado, TerminalRegistrado.Codigo));
+            return;
+        }
+
+        if (authorizeResult.Forbidden && AutorizacaoPorPermissao.PermissaoQueFalta(authorizeResult.AuthorizationFailure) is { } falta)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(falta);
             return;
         }
 
