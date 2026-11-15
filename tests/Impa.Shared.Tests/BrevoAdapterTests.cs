@@ -77,6 +77,35 @@ public class BrevoAdapterTests
         Assert.False(para.TryGetProperty("name", out _));
     }
 
+    [Theory]
+    [InlineData("nao e json")]
+    [InlineData("")]
+    public async Task Resposta_2xx_com_corpo_ilegivel_e_aceita_sem_messageId(string corpo)
+    {
+        var (adapter, _) = Criar(HttpStatusCode.Created, corpo);
+
+        await adapter.EnviarAsync(Mensagem, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Resposta_2xx_com_falha_ao_ler_o_corpo_nunca_lanca_para_nao_reenviar()
+    {
+        // R8 (revisão 1): o Brevo já aceitou; uma falha qualquer na leitura (aqui, a conexão caindo no meio do corpo)
+        // não pode virar exceção, senão o despachante manda o mesmo e-mail de novo.
+        var manipulador = new ManipuladorFalso(HttpStatusCode.Created, conteudo: () => new ConteudoQueFalha());
+        var cliente = new HttpClient(manipulador) { BaseAddress = new Uri(Opcoes.Brevo.UrlBase) };
+        var adapter = new BrevoAdapter(cliente, Options.Create(Opcoes), NullLogger<BrevoAdapter>.Instance);
+
+        await adapter.EnviarAsync(Mensagem, CancellationToken.None);
+    }
+
+    [Fact]
+    public void Timeout_padrao_do_Brevo_e_5_segundos()
+    {
+        // R15 (D1-a): o despachante único espera no máximo isso por evento com o Brevo fora do ar.
+        Assert.Equal(5, new OpcoesDoBrevo().TimeoutEmSegundos);
+    }
+
     [Fact]
     public async Task Envio_desligado_nao_lanca()
     {
@@ -87,7 +116,7 @@ public class BrevoAdapterTests
 
     private sealed record RequisicaoFeita(HttpMethod Metodo, string Url, string? ChaveDaApi, string Corpo);
 
-    private sealed class ManipuladorFalso(HttpStatusCode status, string corpo) : HttpMessageHandler
+    private sealed class ManipuladorFalso(HttpStatusCode status, string corpo = "", Func<HttpContent>? conteudo = null) : HttpMessageHandler
     {
         public List<RequisicaoFeita> Requisicoes { get; } = [];
 
@@ -96,7 +125,22 @@ public class BrevoAdapterTests
             request.Headers.TryGetValues("api-key", out var chaves);
             Requisicoes.Add(new RequisicaoFeita(request.Method, request.RequestUri!.ToString(), chaves?.SingleOrDefault(),
                 request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(ct)));
-            return new HttpResponseMessage(status) { Content = new StringContent(corpo) };
+            return new HttpResponseMessage(status) { Content = conteudo?.Invoke() ?? new StringContent(corpo) };
+        }
+    }
+
+    /// <summary>Corpo cuja leitura falha como uma conexão que cai no meio da resposta.</summary>
+    private sealed class ConteudoQueFalha : HttpContent
+    {
+        public ConteudoQueFalha() => Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            throw new IOException("conexão encerrada (teste)");
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 }

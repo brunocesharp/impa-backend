@@ -36,9 +36,13 @@ public class EnvioDeEmailRegistroTests
     }
 
     [Fact]
-    public void Com_chave_e_sem_remetente_recusa_a_subida()
+    public async Task Com_chave_e_sem_remetente_a_API_sobe_e_cada_envio_falha_para_ficar_no_outbox()
     {
-        Assert.Throws<InvalidOperationException>(() => Montar(new() { ["Email:Brevo:ChaveDaApi"] = "chave" }));
+        // R9 (revisão 1, ADR-009): configuração incompleta do e-mail não derruba a API.
+        var envio = Montar(new() { ["Email:Brevo:ChaveDaApi"] = "chave" }).GetRequiredService<IEnvioDeEmail>();
+
+        var falha = await Assert.ThrowsAsync<FalhaNoEnvioDeEmail>(() => envio.EnviarAsync(Mensagem, CancellationToken.None));
+        Assert.Contains("Email__Remetente", falha.Message);
     }
 
     [Fact]

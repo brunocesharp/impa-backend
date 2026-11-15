@@ -9,7 +9,6 @@ using Impa.Modules.Acesso.Application.Autenticacao.Queries.ObterSessaoAtual;
 using Impa.Modules.Acesso.Application.RecuperacaoDeSenha.Commands.RedefinirSenhaPorLink;
 using Impa.Modules.Acesso.Application.RecuperacaoDeSenha.Commands.SolicitarRecuperacaoDeSenha;
 using MediatR;
-using Microsoft.AspNetCore.Authentication;
 
 namespace Impa.Host.Endpoints;
 
@@ -76,10 +75,10 @@ public static class AutenticacaoEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .LiberarNaTrocaDeSenha();
 
-        // Recuperação de senha por e-mail (story 1-8, RN-1.11). Anônimas, com o limite por IP do login.
+        // Recuperação de senha por e-mail (story 1-8, RN-1.11). Anônimas, com limite por IP próprio (não gasta o do login).
         grupo.MapPost("/esqueci-senha", SolicitarRecuperacaoDeSenha)
             .AllowAnonymous()
-            .RequireRateLimiting(LimiteDeLogin.Politica)
+            .RequireRateLimiting(LimiteDeLogin.PoliticaDeRecuperacao)
             .LiberarNaTrocaDeSenha()
             .WithName("EsqueciSenha")
             .WithSummary("Pede o link de redefinição por e-mail; a resposta é a mesma exista ou não o usuário")
@@ -90,7 +89,7 @@ public static class AutenticacaoEndpoints
 
         grupo.MapPost("/redefinir-senha", RedefinirSenhaPorLink)
             .AllowAnonymous()
-            .RequireRateLimiting(LimiteDeLogin.Politica)
+            .RequireRateLimiting(LimiteDeLogin.PoliticaDeRecuperacao)
             .LiberarNaTrocaDeSenha()
             .WithName("RedefinirSenha")
             .WithSummary("Define a nova senha com o token do link (uso único, 30 minutos) e encerra as sessões abertas")
@@ -110,14 +109,8 @@ public static class AutenticacaoEndpoints
     {
         var resultado = await mediator.Send(
             new RedefinirSenhaPorLinkCommand(request.Token ?? string.Empty, request.NovaSenha ?? string.Empty), ct);
-        if (resultado.IsSuccess && contexto.User.Identity?.IsAuthenticated == true)
-        {
-            // A sessão deste navegador (se havia) foi encerrada junto com as outras: sai do cookie e do token XSRF.
-            await contexto.SignOutAsync();
-            contexto.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity());
-            ProtecaoCsrf.EmitirToken(contexto);
-        }
-
+        if (resultado.IsSuccess)
+            ProtecaoCsrf.EmitirToken(contexto); // o handler pode ter saído da sessão do dono do link: token da identidade atual
         return resultado.ParaHttp();
     }
 

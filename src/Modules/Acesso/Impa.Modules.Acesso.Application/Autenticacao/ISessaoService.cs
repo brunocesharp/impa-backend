@@ -46,6 +46,12 @@ public interface ISessaoService
 
     Task SairAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Sai da sessão deste navegador só se ela for de <paramref name="usuarioId"/> (redefinição de senha pelo link,
+    /// story 1-8): a sessão de outro usuário logado no mesmo navegador continua aberta. <c>true</c> se saiu.
+    /// </summary>
+    Task<bool> SairSeForDoUsuarioAsync(Guid usuarioId, CancellationToken ct);
+
     /// <summary>Usuário da sessão atual; <c>null</c> sem sessão.</summary>
     Task<SessaoDto?> ObterAtualAsync(CancellationToken ct);
 }

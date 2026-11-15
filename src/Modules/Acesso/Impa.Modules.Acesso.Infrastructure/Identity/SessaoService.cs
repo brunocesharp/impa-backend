@@ -124,6 +124,16 @@ public sealed class SessaoService(
         Contexto.User = new ClaimsPrincipal(new ClaimsIdentity());
     }
 
+    public async Task<bool> SairSeForDoUsuarioAsync(Guid usuarioId, CancellationToken ct)
+    {
+        var principal = Contexto.User;
+        if (principal.Identity?.IsAuthenticated != true || userManager.GetUserId(principal) != usuarioId.ToString())
+            return false;
+
+        await SairAsync(ct);
+        return true;
+    }
+
     public async Task<SessaoDto?> ObterAtualAsync(CancellationToken ct)
     {
         var principal = Contexto.User;

@@ -44,6 +44,9 @@ public class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     /// <summary>Tentativas de login por IP na janela (<c>Autenticacao:LimiteDeLogin:Tentativas</c>).</summary>
     protected virtual int TentativasDeLogin => 1_000_000;
 
+    /// <summary>Pedidos de recuperação de senha por IP na janela (<c>Autenticacao:LimiteDeRecuperacao:Tentativas</c>).</summary>
+    protected virtual int TentativasDeRecuperacao => 1_000_000;
+
     /// <summary>Janela deslizante do limite de login (<c>Autenticacao:LimiteDeLogin:JanelaEmSegundos</c>).</summary>
     public virtual int JanelaDeLoginEmSegundos => 60;
 
@@ -65,6 +68,8 @@ public class ImpaApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Empresa:Nome", NomeEmpresa);
         builder.UseSetting("Autenticacao:LimiteDeLogin:Tentativas", TentativasDeLogin.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.UseSetting("Autenticacao:LimiteDeLogin:JanelaEmSegundos", JanelaDeLoginEmSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.UseSetting("Autenticacao:LimiteDeRecuperacao:Tentativas", TentativasDeRecuperacao.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.UseSetting("Autenticacao:LimiteDeRecuperacao:JanelaEmSegundos", JanelaDeLoginEmSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.UseSetting("Acesso:RecuperacaoDeSenha:UrlDaAplicacao", UrlDaAplicacao);
         builder.ConfigureServices(services =>
         {
@@ -131,9 +136,25 @@ public sealed class HasherContador : IPasswordHasher<Usuario>
         Interlocked.Exchange(ref _conferencias, 0);
     }
 
+    private Action<Usuario>? _antesDoProximoHash;
+
+    /// <summary>
+    /// Roda <paramref name="acao"/> uma vez, no próximo hash calculado para o usuário <paramref name="usuarioId"/>: um
+    /// ponto fixo no meio de uma troca de senha, para simular uma gravação concorrente sem depender de sorte.
+    /// </summary>
+    public void AntesDoProximoHash(Guid usuarioId, Action acao) =>
+        _antesDoProximoHash = u =>
+        {
+            if (u.Id != usuarioId)
+                return;
+            _antesDoProximoHash = null;
+            acao();
+        };
+
     public string HashPassword(Usuario user, string password)
     {
         Interlocked.Increment(ref _hashes);
+        _antesDoProximoHash?.Invoke(user);
         return _hasher.HashPassword(user, password);
     }
 

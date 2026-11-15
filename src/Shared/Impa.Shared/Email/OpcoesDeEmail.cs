@@ -23,5 +23,9 @@ public sealed class OpcoesDoBrevo
 
     public string UrlBase { get; set; } = "https://api.brevo.com/v3/";
 
-    public int TimeoutEmSegundos { get; set; } = 15;
+    /// <summary>
+    /// Curto de propósito (D1-a da revisão 1 da story 1-8): a chamada roda no despachante único do Outbox, que
+    /// espera até isso por evento com o Brevo fora do ar. O isolamento por módulo fica com o enabler novo do épico 1.
+    /// </summary>
+    public int TimeoutEmSegundos { get; set; } = 5;
 }

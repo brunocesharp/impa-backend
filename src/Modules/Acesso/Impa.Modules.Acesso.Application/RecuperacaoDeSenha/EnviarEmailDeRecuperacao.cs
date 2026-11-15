@@ -14,8 +14,10 @@ public sealed class EnviarEmailDeRecuperacao(IRecuperacaoDeSenha recuperacao, IE
 {
     public async Task HandleAsync(RecuperacaoDeSenhaSolicitada evento, CancellationToken ct)
     {
-        if (await recuperacao.PrepararEnvioAsync(evento.UsuarioId, ct) is not { } dados)
-            return; // desativado ou sem e-mail desde o pedido: nada a enviar
+        // Nada a enviar (e sem falhar: o evento fica processado): desativado ou sem e-mail desde o pedido, ou pedido
+        // antigo demais — num reprocessamento horas depois, ninguém espera mais esse link (D2-a da revisão 1).
+        if (await recuperacao.PrepararEnvioAsync(evento.UsuarioId, evento.OcorreuEm, ct) is not { } dados)
+            return;
 
         await envio.EnviarAsync(ModeloDoEmailDeRecuperacao.Montar(dados), ct);
     }

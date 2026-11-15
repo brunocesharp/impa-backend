@@ -49,12 +49,72 @@ public class RecuperacaoDeSenhaTests(ImpaApiFactory factory) : IClassFixture<Imp
         return CaixaDeEmails.TokenDoLink(await factory.Emails.EsperarAsync(usuario.Email!, quantidade));
     }
 
-    private async Task<int> EventosPublicadosAsync(Guid usuarioId)
+    private async Task<int> EventosPublicadosAsync(Guid usuarioId) => (await PedidosDoUsuarioAsync(usuarioId)).Count;
+
+    private async Task<List<OutboxMensagem>> PedidosDoUsuarioAsync(Guid usuarioId)
     {
         await using var escopo = factory.Services.CreateAsyncScope();
         var banco = escopo.ServiceProvider.GetRequiredService<AcessoDbContext>();
-        return await banco.Set<OutboxMensagem>().CountAsync(m => m.Tipo == TipoDoEvento && m.ChaveDeCorrelacao == $"usuario:{usuarioId}");
+        return await banco.Set<OutboxMensagem>().AsNoTracking()
+            .Where(m => m.Tipo == TipoDoEvento && m.ChaveDeCorrelacao == $"usuario:{usuarioId}")
+            .OrderBy(m => m.OcorreuEm)
+            .ToListAsync();
     }
+
+    private async Task<int> TotalDePedidosAsync()
+    {
+        await using var escopo = factory.Services.CreateAsyncScope();
+        return await escopo.ServiceProvider.GetRequiredService<AcessoDbContext>().Set<OutboxMensagem>().CountAsync(m => m.Tipo == TipoDoEvento);
+    }
+
+    /// <summary>Espera um pedido do usuário que satisfaça <paramref name="condicao"/> (o despachante é assíncrono).</summary>
+    private async Task<OutboxMensagem> EsperarPedidoAsync(Guid usuarioId, Func<OutboxMensagem, bool> condicao, string descricao)
+    {
+        var fim = DateTime.UtcNow.AddSeconds(20);
+        while (true)
+        {
+            if ((await PedidosDoUsuarioAsync(usuarioId)).FirstOrDefault(condicao) is { } pedido)
+                return pedido;
+            if (DateTime.UtcNow > fim)
+                Assert.Fail($"o pedido de {usuarioId} não chegou a: {descricao}");
+            await Task.Delay(50);
+        }
+    }
+
+    /// <summary>Faz o despachante tentar de novo agora (vence o intervalo da nova tentativa no relógio controlado).</summary>
+    private void AcordarDespachante(TimeSpan avanco)
+    {
+        factory.Clock.Advance(avanco);
+        factory.Services.GetRequiredService<SinalDoDespachante>().Acordar();
+    }
+
+    private async Task AlterarAsync(Guid usuarioId, Action<Usuario> alteracao)
+    {
+        await using var escopo = factory.Services.CreateAsyncScope();
+        var usuarios = escopo.ServiceProvider.GetRequiredService<UserManager<Usuario>>();
+        var usuario = (await usuarios.FindByIdAsync(usuarioId.ToString()))!;
+        alteracao(usuario);
+        Assert.True((await usuarios.UpdateAsync(usuario)).Succeeded);
+    }
+
+    private async Task<Usuario> BuscarAsync(Guid usuarioId)
+    {
+        await using var escopo = factory.Services.CreateAsyncScope();
+        return (await escopo.ServiceProvider.GetRequiredService<UserManager<Usuario>>().FindByIdAsync(usuarioId.ToString()))!;
+    }
+
+    /// <summary>Gravação concorrente direto no banco, fora da requisição em andamento (outra conexão).</summary>
+    private void GravarConcorrente(Guid usuarioId, string sets)
+    {
+        using var escopo = factory.Services.CreateScope();
+        var banco = escopo.ServiceProvider.GetRequiredService<AcessoDbContext>();
+#pragma warning disable EF1002 // sets é fixo no teste; o id vai por parâmetro
+        banco.Database.ExecuteSqlRaw($"UPDATE acesso.usuarios SET {sets} WHERE \"Id\" = {{0}}", usuarioId);
+#pragma warning restore EF1002
+    }
+
+    /// <summary>N do D2-a (padrão de <c>Acesso:RecuperacaoDeSenha:IntervaloMinimoEntrePedidosEmMinutos</c>).</summary>
+    private static readonly TimeSpan IntervaloMinimo = TimeSpan.FromMinutes(5);
 
     private static async Task<string[]> ErrosAsync(HttpResponseMessage resposta, string campo)
     {
@@ -85,6 +145,7 @@ public class RecuperacaoDeSenhaTests(ImpaApiFactory factory) : IClassFixture<Imp
             _ => null,
         };
         var informado = usuario?.Login ?? $"joana-{Guid.NewGuid():N}"[..20];
+        var pedidosAntes = await TotalDePedidosAsync();
 
         var resposta = await PedirAsync(informado);
 
@@ -98,11 +159,14 @@ public class RecuperacaoDeSenhaTests(ImpaApiFactory factory) : IClassFixture<Imp
             Assert.Contains("30 minutos", email.Texto);
             Assert.Contains($"{ImpaApiFactory.UrlDaAplicacao}/redefinir-senha#token=", email.Texto);
         }
-        else if (usuario is not null)
+        else
         {
-            Assert.Equal(0, await EventosPublicadosAsync(usuario.Id));
-            if (usuario.Email is not null)
-                Assert.Empty(factory.Emails.Para(usuario.Email));
+            // "Nenhum e-mail é enviado" = nenhum pedido gravado no Outbox durante a requisição: o e-mail só sai de lá,
+            // então isso não depende do despachante assíncrono (R2 da revisão 1). Vale também para a "joana",
+            // que não tem id para filtrar: os testes da classe rodam em sequência, então o total não pode mudar.
+            Assert.Equal(pedidosAntes, await TotalDePedidosAsync());
+            if (usuario is not null)
+                Assert.Equal(0, await EventosPublicadosAsync(usuario.Id));
         }
     }
 
@@ -156,23 +220,111 @@ public class RecuperacaoDeSenhaTests(ImpaApiFactory factory) : IClassFixture<Imp
 
         Assert.Equal(HttpStatusCode.NoContent, (await PedirAsync(ana.Login)).StatusCode);
 
-        // A primeira tentativa falha; a próxima é agendada pelo despachante e entrega o e-mail.
+        // A primeira tentativa falha e fica registrada; a próxima é agendada pelo despachante e entrega o e-mail.
+        var falhou = await EsperarPedidoAsync(ana.Id, m => m.Tentativas >= 1, "falha registrada");
+        Assert.Equal(SituacaoDoEvento.Pendente, falhou.Situacao);
+        Assert.Contains("Brevo fora do ar", falhou.UltimoErro);
+        Assert.Empty(factory.Emails.Para(ana.Email!));
+
+        AcordarDespachante(TimeSpan.FromMinutes(5)); // vence o intervalo da nova tentativa
+        await factory.Emails.EsperarAsync(ana.Email!);
+        await EsperarPedidoAsync(ana.Id, m => m.Situacao == SituacaoDoEvento.Entregue, "entregue");
+    }
+
+    // ---- R4: o que vai no Outbox e o que acontece entre o pedido e o envio ----
+
+    [Fact]
+    public async Task Outbox_leva_so_o_id_do_usuario_e_nunca_o_token()
+    {
+        var ana = await NovoUsuarioAsync("conteudo");
+        var token = await TokenAsync(ana);
+
+        var pedido = Assert.Single(await PedidosDoUsuarioAsync(ana.Id));
+        using var json = System.Text.Json.JsonDocument.Parse(pedido.Conteudo);
+        var campos = json.RootElement.EnumerateObject().Select(p => p.Name.ToLowerInvariant()).Order().ToArray();
+        Assert.Equal(["chavedecorrelacao", "id", "ocorreuem", "usuarioid"], campos); // a chave é "usuario:{id}"
+        Assert.DoesNotContain(token, pedido.Conteudo);
+        Assert.DoesNotContain(ana.Email!, pedido.Conteudo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public enum MudancaAntesDoEnvio { Desativado, SemEmail }
+
+    [Theory]
+    [InlineData(MudancaAntesDoEnvio.Desativado)]
+    [InlineData(MudancaAntesDoEnvio.SemEmail)]
+    public async Task Usuario_que_deixou_de_ter_email_ativo_antes_do_envio_nao_recebe_nada(MudancaAntesDoEnvio mudanca)
+    {
+        var ana = await NovoUsuarioAsync("entre");
+        factory.Emails.FalharPara(ana.Email!, vezes: 1); // segura o envio no Outbox, depois do pedido
+        Assert.Equal(HttpStatusCode.NoContent, (await PedirAsync(ana.Login)).StatusCode);
+        await EsperarPedidoAsync(ana.Id, m => m.Tentativas >= 1, "primeira tentativa");
+
+        await AlterarAsync(ana.Id, u =>
+        {
+            if (mudanca == MudancaAntesDoEnvio.Desativado)
+                u.Desativar();
+            else
+                u.Email = null;
+        });
+        AcordarDespachante(TimeSpan.FromMinutes(5));
+
+        // PrepararEnvioAsync → null: o handler termina sem enviar e sem falhar (o evento fica processado).
+        await EsperarPedidoAsync(ana.Id, m => m.Situacao == SituacaoDoEvento.Entregue, "processado");
+        Assert.Empty(factory.Emails.Para(ana.Email!));
+    }
+
+    // ---- R16 (D2-a): intervalo mínimo entre pedidos e idade máxima do pedido ----
+
+    [Fact]
+    public async Task Segundo_pedido_antes_do_intervalo_minimo_nao_gera_evento_nem_email_e_depois_gera()
+    {
+        var ana = await NovoUsuarioAsync("interv");
+        await TokenAsync(ana);
+
+        factory.Clock.Advance(IntervaloMinimo - TimeSpan.FromSeconds(1));
+        var resposta = await PedirAsync(ana.Login);
+        Assert.Equal(HttpStatusCode.NoContent, resposta.StatusCode); // mesma resposta
+        Assert.Equal(string.Empty, await resposta.Content.ReadAsStringAsync());
+        Assert.Equal(1, await EventosPublicadosAsync(ana.Id));
+
+        factory.Clock.Advance(TimeSpan.FromSeconds(2));
+        await TokenAsync(ana, quantidade: 2);
+        Assert.Equal(2, await EventosPublicadosAsync(ana.Id));
+    }
+
+    [Fact]
+    public async Task Pedido_com_falha_definitiva_nao_segura_um_pedido_novo()
+    {
+        // Só pendente ou entregue contam para o intervalo: um "com falha" não deixa o usuário sem link.
+        var ana = await NovoUsuarioAsync("comfal");
+        factory.Emails.FalharPara(ana.Email!, vezes: 1);
+        Assert.Equal(HttpStatusCode.NoContent, (await PedirAsync(ana.Login)).StatusCode);
+        await EsperarPedidoAsync(ana.Id, m => m.Tentativas >= 1, "primeira tentativa");
         await using (var escopo = factory.Services.CreateAsyncScope())
         {
             var banco = escopo.ServiceProvider.GetRequiredService<AcessoDbContext>();
-            var fim = DateTime.UtcNow.AddSeconds(20);
-            while (!await banco.Set<OutboxMensagem>().AnyAsync(m =>
-                       m.ChaveDeCorrelacao == $"usuario:{ana.Id}" && m.Tentativas >= 1))
-            {
-                if (DateTime.UtcNow > fim)
-                    Assert.Fail("a falha do envio não foi registrada no Outbox");
-                await Task.Delay(50);
-            }
+            await banco.Set<OutboxMensagem>()
+                .Where(m => m.ChaveDeCorrelacao == $"usuario:{ana.Id}")
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Situacao, SituacaoDoEvento.ComFalha));
         }
 
-        factory.Clock.Advance(TimeSpan.FromMinutes(5)); // vence o intervalo da nova tentativa
-        factory.Services.GetRequiredService<SinalDoDespachante>().Acordar();
-        await factory.Emails.EsperarAsync(ana.Email!);
+        Assert.Equal(HttpStatusCode.NoContent, (await PedirAsync(ana.Login)).StatusCode);
+
+        Assert.Equal(2, await EventosPublicadosAsync(ana.Id));
+    }
+
+    [Fact]
+    public async Task Pedido_mais_antigo_que_a_idade_maxima_e_descartado_sem_email()
+    {
+        var ana = await NovoUsuarioAsync("velho");
+        factory.Emails.FalharPara(ana.Email!, vezes: 1);
+        Assert.Equal(HttpStatusCode.NoContent, (await PedirAsync(ana.Login)).StatusCode);
+        await EsperarPedidoAsync(ana.Id, m => m.Tentativas >= 1, "primeira tentativa");
+
+        AcordarDespachante(TimeSpan.FromMinutes(61)); // a nova tentativa chega depois de 60 minutos do pedido
+
+        await EsperarPedidoAsync(ana.Id, m => m.Situacao == SituacaoDoEvento.Entregue, "processado");
+        Assert.Empty(factory.Emails.Para(ana.Email!));
     }
 
     // ---- CA-1, CA-3: cenário 1.9 ----
@@ -223,6 +375,25 @@ public class RecuperacaoDeSenhaTests(ImpaApiFactory factory) : IClassFixture<Imp
     }
 
     [Fact]
+    public async Task Redefinir_no_navegador_com_sessao_de_outro_usuario_nao_mexe_nessa_sessao()
+    {
+        // R6 (revisão 1): o operador logado no caixa onde Ana abre o link continua logado.
+        var ana = await NovoUsuarioAsync("dona");
+        var operador = await NovoUsuarioAsync("operador");
+        var caixa = await ClienteApi.AbrirAsync(factory);
+        Assert.Equal(HttpStatusCode.NoContent, (await caixa.EntrarAsync(operador.Login, Senha)).StatusCode);
+        var token = await TokenAsync(ana);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await caixa.PostAsync("/api/auth/redefinir-senha", new { token, novaSenha = NovaSenha })).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await caixa.GetAsync("/api/auth/me")).StatusCode);
+        await using var escopo = factory.Services.CreateAsyncScope();
+        var banco = escopo.ServiceProvider.GetRequiredService<AcessoDbContext>();
+        Assert.Contains(await banco.Sessoes.Where(s => s.UsuarioId == operador.Id).ToListAsync(), s => s.RevogadaEm is null);
+        Assert.Equal(HttpStatusCode.NoContent, (await caixa.SairAsync()).StatusCode); // o token XSRF emitido continua ligado ao operador
+    }
+
+    [Fact]
     public async Task Link_vale_por_30_minutos()
     {
         var dentro = await NovoUsuarioAsync("dentro");
@@ -238,23 +409,104 @@ public class RecuperacaoDeSenhaTests(ImpaApiFactory factory) : IClassFixture<Imp
     }
 
     [Fact]
-    public async Task Redefinir_zera_a_contagem_de_bloqueio()
+    public async Task Redefinir_zera_a_contagem_parcial_de_senhas_erradas()
+    {
+        // R1 (revisão 1): com menos de 5 erros a contagem não é zerada pelo próprio bloqueio — só a redefinição zera.
+        var ana = await NovoUsuarioAsync("parcial");
+        var cliente = await ClienteApi.AbrirAsync(factory);
+        for (var i = 0; i < 3; i++)
+            await cliente.EntrarAsync(ana.Login, "errada-123");
+        Assert.Equal(3, (await BuscarAsync(ana.Id)).AccessFailedCount);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await RedefinirAsync(await TokenAsync(ana))).StatusCode);
+
+        Assert.Equal(0, (await BuscarAsync(ana.Id)).AccessFailedCount);
+    }
+
+    [Fact]
+    public async Task Redefinir_tira_o_bloqueio_por_tentativas()
     {
         var ana = await NovoUsuarioAsync("bloq");
         var cliente = await ClienteApi.AbrirAsync(factory);
         for (var i = 0; i < 5; i++)
             await cliente.EntrarAsync(ana.Login, "errada-123");
+        Assert.NotNull((await BuscarAsync(ana.Id)).LockoutEnd); // bloqueada antes de redefinir
 
         Assert.Equal(HttpStatusCode.NoContent, (await RedefinirAsync(await TokenAsync(ana))).StatusCode);
 
-        await using (var escopo = factory.Services.CreateAsyncScope())
-        {
-            var usuario = (await escopo.ServiceProvider.GetRequiredService<UserManager<Usuario>>().FindByIdAsync(ana.Id.ToString()))!;
-            Assert.Equal(0, usuario.AccessFailedCount);
-            Assert.Null(usuario.LockoutEnd);
-        }
-
+        var depois = await BuscarAsync(ana.Id);
+        Assert.Equal(0, depois.AccessFailedCount);
+        Assert.Null(depois.LockoutEnd);
         Assert.Equal(HttpStatusCode.NoContent, (await (await ClienteApi.AbrirAsync(factory)).EntrarAsync(ana.Login, NovaSenha)).StatusCode);
+    }
+
+    // ---- R3, R7: gravações concorrentes ----
+
+    [Fact]
+    public async Task Mesmo_link_usado_duas_vezes_ao_mesmo_tempo_vale_so_uma()
+    {
+        var ana = await NovoUsuarioAsync("simult");
+        var token = await TokenAsync(ana);
+
+        var respostas = await Task.WhenAll(RedefinirAsync(token), RedefinirAsync(token, "outrasenha99"));
+
+        Assert.Single(respostas, r => r.StatusCode == HttpStatusCode.NoContent);
+        var recusada = Assert.Single(respostas, r => r.StatusCode != HttpStatusCode.NoContent);
+        Assert.Equal([MensagemLinkInvalido], await ErrosAsync(recusada, "Token"));
+    }
+
+    [Fact]
+    public async Task Link_usado_por_outra_requisicao_no_meio_da_redefinicao_e_recusado()
+    {
+        // Versão determinística do teste acima: a outra redefinição grava (stamp novo) entre a leitura e a gravação.
+        var ana = await NovoUsuarioAsync("meio");
+        var token = await TokenAsync(ana);
+        factory.Hasher.AntesDoProximoHash(ana.Id, () => GravarConcorrente(ana.Id,
+            "\"SecurityStamp\" = gen_random_uuid()::text, \"ConcurrencyStamp\" = gen_random_uuid()::text"));
+
+        Assert.Equal([MensagemLinkInvalido], await ErrosAsync(await RedefinirAsync(token), "Token"));
+    }
+
+    [Fact]
+    public async Task Senha_errada_no_login_no_meio_da_redefinicao_nao_recusa_um_link_valido()
+    {
+        // R7 (revisão 1): o login errado troca só o ConcurrencyStamp (SessaoService.RegistrarFalhaAsync); o link
+        // continua valendo e a redefinição tenta de novo.
+        var ana = await NovoUsuarioAsync("concor");
+        var token = await TokenAsync(ana);
+        factory.Hasher.AntesDoProximoHash(ana.Id, () => GravarConcorrente(ana.Id,
+            "\"AccessFailedCount\" = \"AccessFailedCount\" + 1, \"ConcurrencyStamp\" = gen_random_uuid()::text"));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await RedefinirAsync(token)).StatusCode);
+
+        Assert.Equal(0, (await BuscarAsync(ana.Id)).AccessFailedCount);
+        Assert.Equal(HttpStatusCode.NoContent, (await (await ClienteApi.AbrirAsync(factory)).EntrarAsync(ana.Login, NovaSenha)).StatusCode);
+    }
+
+    // ---- R10: e-mail trocado depois do envio ----
+
+    public enum MudancaDoEmail { Trocado, Removido }
+
+    [Theory]
+    [InlineData(MudancaDoEmail.Trocado)]
+    [InlineData(MudancaDoEmail.Removido)]
+    public async Task Link_enviado_a_um_email_que_nao_e_mais_do_usuario_e_recusado(MudancaDoEmail mudanca)
+    {
+        var ana = await NovoUsuarioAsync("trocaem");
+        var token = await TokenAsync(ana);
+        await AlterarAsync(ana.Id, u => u.Email = mudanca == MudancaDoEmail.Trocado ? $"nova-{u.Email}" : null);
+
+        Assert.Equal([MensagemLinkInvalido], await ErrosAsync(await RedefinirAsync(token), "Token"));
+    }
+
+    [Fact]
+    public async Task Email_so_com_maiusculas_diferentes_continua_valendo()
+    {
+        var ana = await NovoUsuarioAsync("caixa");
+        var token = await TokenAsync(ana);
+        await AlterarAsync(ana.Id, u => u.Email = u.Email!.ToUpperInvariant());
+
+        Assert.Equal(HttpStatusCode.NoContent, (await RedefinirAsync(token)).StatusCode);
     }
 
     [Fact]
@@ -273,6 +525,7 @@ public class RecuperacaoDeSenhaTests(ImpaApiFactory factory) : IClassFixture<Imp
     {
         var ana = await NovoUsuarioAsync("dois");
         var primeiro = await TokenAsync(ana);
+        factory.Clock.Advance(IntervaloMinimo + TimeSpan.FromSeconds(1)); // antes disso, o segundo pedido seria ignorado (D2-a)
         var segundo = await TokenAsync(ana, quantidade: 2);
 
         Assert.Equal(HttpStatusCode.NoContent, (await RedefinirAsync(segundo)).StatusCode);
