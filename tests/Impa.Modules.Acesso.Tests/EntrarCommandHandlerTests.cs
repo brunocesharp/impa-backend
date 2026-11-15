@@ -227,6 +227,8 @@ public class EntrarCommandHandlerTests
 
         public Task SairAsync(CancellationToken ct) => Task.CompletedTask;
 
+        public Task<bool> SairSeForDoUsuarioAsync(Guid usuarioId, CancellationToken ct) => Task.FromResult(false);
+
         public Task<SessaoDto?> ObterAtualAsync(CancellationToken ct) => Task.FromResult<SessaoDto?>(null);
     }
 }

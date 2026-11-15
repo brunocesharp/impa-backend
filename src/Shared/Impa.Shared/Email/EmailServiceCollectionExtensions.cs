@@ -27,8 +27,15 @@ public static class EmailServiceCollectionExtensions
             return services;
         }
 
+        // R9 (revisão 1 da story 1-8, ADR-009): configuração incompleta não derruba a API. Cada envio registra o erro
+        // no log e falha, ficando "com falha" no Outbox para reprocessar depois de configurar o remetente.
         if (string.IsNullOrWhiteSpace(opcoes.Remetente))
-            throw new InvalidOperationException("Email:Remetente não configurado: o Brevo exige o remetente.");
+        {
+            services.AddSingleton<IEnvioDeEmail>(sp => new EnvioDeEmailDesligado(
+                sp.GetRequiredService<ILogger<EnvioDeEmailDesligado>>(), descartar: false,
+                motivo: "Email:Remetente não configurado (Email__Remetente): o Brevo exige o remetente"));
+            return services;
+        }
 
         services.AddHttpClient<IEnvioDeEmail, BrevoAdapter>(http =>
         {

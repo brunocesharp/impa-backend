@@ -245,6 +245,8 @@ public class UsuariosHandlersTests
         public Task<bool> ZerarFalhasAsync(Guid id, CancellationToken ct) => throw new NotSupportedException();
         public Task AbrirAsync(Guid id, CancellationToken ct) => throw new NotSupportedException();
         public Task SairAsync(CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<bool> SairSeForDoUsuarioAsync(Guid usuarioId, CancellationToken ct) => throw new NotSupportedException();
         public Task<SessaoDto?> ObterAtualAsync(CancellationToken ct) => throw new NotSupportedException();
     }
 }

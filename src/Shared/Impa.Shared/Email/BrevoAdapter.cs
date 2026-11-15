@@ -30,7 +30,9 @@ public sealed class BrevoAdapter(HttpClient http, IOptions<OpcoesDeEmail> opcoes
         HttpResponseMessage resposta;
         try
         {
-            resposta = await http.SendAsync(requisicao, ct);
+            // Só os cabeçalhos: com o corpo lido aqui dentro, uma falha na leitura depois de um 2xx viraria
+            // HttpRequestException e o despachante reenviaria um e-mail que o Brevo já aceitou (R8, revisão 1).
+            resposta = await http.SendAsync(requisicao, HttpCompletionOption.ResponseHeadersRead, ct);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
@@ -41,27 +43,41 @@ public sealed class BrevoAdapter(HttpClient http, IOptions<OpcoesDeEmail> opcoes
         {
             if (resposta.IsSuccessStatusCode)
             {
-                var enviado = await LerAsync(resposta, ct);
-                log.LogInformation("E-mail \"{Assunto}\" aceito pelo Brevo ({MessageId})", mensagem.Assunto, enviado?.MessageId);
+                var messageId = await LerMessageIdAsync(resposta, ct);
+                log.LogInformation("E-mail \"{Assunto}\" aceito pelo Brevo ({MessageId})", mensagem.Assunto, messageId);
                 return;
             }
 
             // O corpo de erro do Brevo é { code, message }: vai para o log, sem o destinatário nem o conteúdo.
-            var detalhe = await resposta.Content.ReadAsStringAsync(ct);
+            string detalhe;
+            try
+            {
+                detalhe = await resposta.Content.ReadAsStringAsync(ct);
+            }
+            catch (Exception e) when (e is HttpRequestException or IOException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                detalhe = "(corpo ilegível)";
+            }
+
             throw new FalhaNoEnvioDeEmail(
                 $"Brevo recusou o e-mail \"{mensagem.Assunto}\": HTTP {(int)resposta.StatusCode} {Recortar(detalhe)}");
         }
     }
 
-    private static async Task<EnviarEmailApiResponse?> LerAsync(HttpResponseMessage resposta, CancellationToken ct)
+    /// <summary>
+    /// Depois de um 2xx o e-mail já foi aceito: nada aqui pode lançar (nem JSON inválido, nem a conexão caindo no meio
+    /// do corpo, nem o cancelamento), senão o despachante reenviaria. Só o id da mensagem fica sem registro.
+    /// </summary>
+    private async Task<string?> LerMessageIdAsync(HttpResponseMessage resposta, CancellationToken ct)
     {
         try
         {
-            return await resposta.Content.ReadFromJsonAsync<EnviarEmailApiResponse>(ct);
+            return (await resposta.Content.ReadFromJsonAsync<EnviarEmailApiResponse>(ct))?.MessageId;
         }
-        catch (System.Text.Json.JsonException)
+        catch (Exception e)
         {
-            return null; // aceito; só o id da mensagem fica sem registro
+            log.LogWarning("Brevo aceitou o e-mail, mas a resposta não pôde ser lida ({Erro})", e.GetType().Name);
+            return null;
         }
     }
 
@@ -82,20 +98,25 @@ public sealed class BrevoAdapter(HttpClient http, IOptions<OpcoesDeEmail> opcoes
 }
 
 /// <summary>
-/// Envio desligado (sem <c>Email:Brevo:ChaveDaApi</c>). Em desenvolvimento e testes (<paramref name="descartar"/>)
-/// só registra no log que o e-mail não saiu, sem o conteúdo, que pode ter um link de uso único. Fora deles lança
-/// <see cref="FalhaNoEnvioDeEmail"/>: a API continua no ar (ADR-009) e o evento fica "com falha" no Outbox,
-/// reprocessável depois que a chave for configurada.
+/// Envio desligado: sem <c>Email:Brevo:ChaveDaApi</c>, ou com a chave e sem o remetente (<paramref name="motivo"/>).
+/// Em desenvolvimento e testes (<paramref name="descartar"/>) só registra no log que o e-mail não saiu, sem o
+/// conteúdo, que pode ter um link de uso único. Senão registra o erro e lança <see cref="FalhaNoEnvioDeEmail"/>: a API
+/// continua no ar (ADR-009) e o evento fica "com falha" no Outbox, reprocessável depois de corrigir a configuração.
 /// </summary>
-public sealed class EnvioDeEmailDesligado(ILogger<EnvioDeEmailDesligado> log, bool descartar = true) : IEnvioDeEmail
+public sealed class EnvioDeEmailDesligado(
+    ILogger<EnvioDeEmailDesligado> log,
+    bool descartar = true,
+    string motivo = "configure Email__Brevo__ChaveDaApi") : IEnvioDeEmail
 {
     public Task EnviarAsync(MensagemDeEmail mensagem, CancellationToken ct)
     {
         if (!descartar)
-            throw new FalhaNoEnvioDeEmail(
-                $"Envio de e-mail desligado: configure Email__Brevo__ChaveDaApi. \"{mensagem.Assunto}\" não foi enviado.");
+        {
+            log.LogError("Envio de e-mail desligado ({Motivo}): \"{Assunto}\" não foi enviado", motivo, mensagem.Assunto);
+            throw new FalhaNoEnvioDeEmail($"Envio de e-mail desligado: {motivo}. \"{mensagem.Assunto}\" não foi enviado.");
+        }
 
-        log.LogWarning("Envio de e-mail desligado (sem Email:Brevo:ChaveDaApi): \"{Assunto}\" não foi enviado", mensagem.Assunto);
+        log.LogWarning("Envio de e-mail desligado ({Motivo}): \"{Assunto}\" não foi enviado", motivo, mensagem.Assunto);
         return Task.CompletedTask;
     }
 }
